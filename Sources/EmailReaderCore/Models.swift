@@ -44,6 +44,7 @@ public enum MailCategory: String, CaseIterable, Identifiable, Codable, Sendable 
     case action = "行动事项"
     case security = "账户与安全"
     case finance = "账单与财务"
+    case investment = "投资研究"
     case project = "工作与项目"
     case reading = "资讯与阅读"
     case personal = "个人往来"
@@ -56,6 +57,7 @@ public enum MailCategory: String, CaseIterable, Identifiable, Codable, Sendable 
         case .action: "bolt"
         case .security: "lock.shield"
         case .finance: "creditcard"
+        case .investment: "chart.line.uptrend.xyaxis"
         case .project: "folder"
         case .reading: "newspaper"
         case .personal: "person.2"
@@ -100,6 +102,7 @@ public struct MailThread: Identifiable, Hashable, Sendable {
     public let userAttention: Bool
     public let importance: Int
     public let summary: String
+    public let investmentThesis: InvestmentThesis?
     public let whyImportant: String
     public let actionItems: [String]
     public let deadline: String?
@@ -127,6 +130,7 @@ public struct MailThread: Identifiable, Hashable, Sendable {
         userAttention: Bool = false,
         importance: Int,
         summary: String,
+        investmentThesis: InvestmentThesis? = nil,
         whyImportant: String,
         actionItems: [String],
         deadline: String?,
@@ -154,6 +158,7 @@ public struct MailThread: Identifiable, Hashable, Sendable {
         self.needsAttention = predictedAttention || userAttention
         self.importance = importance
         self.summary = summary
+        self.investmentThesis = investmentThesis
         self.whyImportant = whyImportant
         self.actionItems = actionItems
         self.deadline = deadline
@@ -162,6 +167,31 @@ public struct MailThread: Identifiable, Hashable, Sendable {
         self.hasAttachments = hasAttachments
         self.gmailURL = gmailURL
         self.isDemo = isDemo
+    }
+}
+
+public struct InvestmentThesis: Codable, Hashable, Sendable {
+    public let thesis: String
+    public let evidence: [String]
+    public let catalysts: [String]
+    public let risks: [String]
+    public let tickers: [String]
+    public let horizon: String?
+
+    public init(
+        thesis: String,
+        evidence: [String],
+        catalysts: [String],
+        risks: [String],
+        tickers: [String],
+        horizon: String?
+    ) {
+        self.thesis = thesis
+        self.evidence = evidence
+        self.catalysts = catalysts
+        self.risks = risks
+        self.tickers = tickers
+        self.horizon = horizon
     }
 }
 
@@ -219,6 +249,7 @@ public struct DailyBriefItem: Identifiable, Codable, Hashable, Sendable {
     public let title: String
     public let sender: String
     public let summary: String
+    public let investmentThesis: InvestmentThesis?
     public let whyItMatters: String
     public let suggestedAction: String?
     public let category: MailCategory
@@ -229,6 +260,7 @@ public struct DailyBriefItem: Identifiable, Codable, Hashable, Sendable {
         title: String,
         sender: String,
         summary: String,
+        investmentThesis: InvestmentThesis? = nil,
         whyItMatters: String,
         suggestedAction: String?,
         category: MailCategory
@@ -238,6 +270,7 @@ public struct DailyBriefItem: Identifiable, Codable, Hashable, Sendable {
         self.title = title
         self.sender = sender
         self.summary = summary
+        self.investmentThesis = investmentThesis
         self.whyItMatters = whyItMatters
         self.suggestedAction = suggestedAction
         self.category = category
@@ -324,6 +357,7 @@ public struct CompactBriefInputMail: Codable, Sendable {
     public let receivedAt: String
     public let category: MailCategory
     public let summary: String
+    public let investmentThesis: InvestmentThesis?
     public let whyImportant: String
     public let suggestedAction: String?
     public let importance: Int

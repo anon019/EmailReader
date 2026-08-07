@@ -35,6 +35,9 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             if !threadColumns.contains("user_attention") {
                 try execute(db, sql: "ALTER TABLE threads ADD COLUMN user_attention INTEGER NOT NULL DEFAULT 0")
             }
+            if !threadColumns.contains("investment_thesis_json") {
+                try execute(db, sql: "ALTER TABLE threads ADD COLUMN investment_thesis_json TEXT NOT NULL DEFAULT ''")
+            }
             let now = Self.isoDate(.now)
             try execute(db, sql: "INSERT OR IGNORE INTO accounts(id,email,provider,display_name,auth_state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", values: ["gmail-primary", "", "gmail", "", "disconnected", now, now])
             try execute(db, sql: "INSERT OR IGNORE INTO settings(key,value) VALUES('schedule_time','07:30'),('analysis_provider','codex_daily_brief'),('initial_lookback_days','7'),('block_remote_images','1')")
@@ -178,6 +181,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
                 receivedAt: Self.isoDate(thread.receivedAt),
                 category: thread.category,
                 summary: thread.summary,
+                investmentThesis: thread.investmentThesis,
                 whyImportant: thread.whyImportant,
                 suggestedAction: thread.actionItems.first,
                 importance: thread.importance,
@@ -200,6 +204,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
     public func installDailyBrief(from source: URL) throws {
         let sourceData = try Data(contentsOf: source)
         let decoded = try JSONDecoder().decode(DailyBrief.self, from: sourceData)
+        let threadByID = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
         let brief = DailyBrief(
             date: decoded.date,
             generatedAt: decoded.generatedAt,
@@ -207,15 +212,21 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             headline: decoded.headline,
             overview: decoded.overview,
             total: decoded.total,
-            priority: decoded.priority.map { Self.normalizedBriefItem($0, allowsAction: true) },
-            noteworthy: decoded.noteworthy.map { Self.normalizedBriefItem($0, allowsAction: false) },
-            later: decoded.later.map { Self.normalizedBriefItem($0, allowsAction: false) },
+            priority: decoded.priority.map { Self.normalizedBriefItem($0, allowsAction: true, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
+            noteworthy: decoded.noteworthy.map { Self.normalizedBriefItem($0, allowsAction: false, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
+            later: decoded.later.map { Self.normalizedBriefItem($0, allowsAction: false, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
             lowPriorityCount: decoded.lowPriorityCount
         )
         let knownIDs = Set(try loadThreads(filter: .all).map(\.id))
         let items = brief.priority + brief.noteworthy + brief.later
         let referencedIDs = items.map(\.threadID)
         let itemIDs = items.map(\.id)
+        let prioritySemanticsAreValid = brief.priority.allSatisfy { item in
+            guard let thread = threadByID[item.threadID] else { return false }
+            return thread.needsAttention ||
+                thread.category == .security ||
+                (thread.category == .action && !thread.actionItems.isEmpty)
+        }
         guard !brief.date.isEmpty,
               !brief.headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               brief.total >= 0,
@@ -223,6 +234,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
               brief.priority.count <= 8,
               brief.noteworthy.count <= 5,
               brief.later.count <= 5,
+              prioritySemanticsAreValid,
               Set(referencedIDs).count == referencedIDs.count,
               Set(itemIDs).count == itemIDs.count else {
             throw EmailReaderDatabaseError.step("简报结构或计数不合法，未安装。")
@@ -253,14 +265,15 @@ public final class EmailReaderDatabase: @unchecked Sendable {
     }
 
     public func updateAnalysis(threadID: String, result: MailAnalysisResult) throws {
+        let investmentThesisJSON = Self.encodeInvestmentThesis(result.investmentThesis)
         try withDatabase { db in
             try execute(db, sql: """
                 UPDATE threads SET category=?, needs_attention=?, importance=?, summary=?, why_important=?,
-                  action_items=?, deadline=?, confidence=?, updated_at=? WHERE id=?
+                  action_items=?, deadline=?, confidence=?, investment_thesis_json=?, updated_at=? WHERE id=?
                 """, values: [
                     result.category.rawValue, result.needsAttention ? "1" : "0", String(result.importance),
                     result.summary, result.whyImportant, result.actionItems.joined(separator: "\n"),
-                    result.deadline ?? "", String(result.confidence), Self.isoDate(.now), threadID
+                    result.deadline ?? "", String(result.confidence), investmentThesisJSON, Self.isoDate(.now), threadID
                 ])
         }
     }
@@ -349,14 +362,16 @@ public final class EmailReaderDatabase: @unchecked Sendable {
                 INSERT INTO threads(
                   id,account_id,provider_thread_id,subject,sender_name,sender_email,received_at,snippet,body_plain,
                   category,reading_state,gmail_unread,needs_attention,importance,summary,why_important,
-                  action_items,deadline,confidence,message_count,has_attachments,gmail_url,is_demo,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  action_items,deadline,confidence,message_count,has_attachments,gmail_url,is_demo,investment_thesis_json,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   subject=excluded.subject,sender_name=excluded.sender_name,sender_email=excluded.sender_email,
                   received_at=excluded.received_at,snippet=excluded.snippet,body_plain=excluded.body_plain,
                   category=excluded.category,gmail_unread=excluded.gmail_unread,importance=excluded.importance,
                   summary=CASE WHEN threads.body_plain=excluded.body_plain AND threads.summary<>''
                     THEN threads.summary ELSE excluded.summary END,
+                  investment_thesis_json=CASE WHEN threads.body_plain=excluded.body_plain AND threads.investment_thesis_json<>''
+                    THEN threads.investment_thesis_json ELSE excluded.investment_thesis_json END,
                   why_important=excluded.why_important,action_items=excluded.action_items,
                   deadline=excluded.deadline,confidence=excluded.confidence,message_count=excluded.message_count,
                   has_attachments=excluded.has_attachments,gmail_url=excluded.gmail_url,is_demo=0,updated_at=excluded.updated_at
@@ -366,7 +381,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
                     thread.readingState.rawValue, thread.gmailUnread ? "1" : "0", thread.needsAttention ? "1" : "0",
                     String(thread.importance), thread.summary, thread.whyImportant, thread.actionItems.joined(separator: "\n"),
                     thread.deadline ?? "", String(thread.confidence), String(thread.messageCount), thread.hasAttachments ? "1" : "0",
-                    thread.gmailURL?.absoluteString ?? "", "0", Self.isoDate(.now), Self.isoDate(.now)
+                    thread.gmailURL?.absoluteString ?? "", "0", Self.encodeInvestmentThesis(thread.investmentThesis), Self.isoDate(.now), Self.isoDate(.now)
                 ])
         }
     }
@@ -490,6 +505,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             userAttention: row.int("user_attention") == 1,
             importance: row.int("importance"),
             summary: row.string("summary"),
+            investmentThesis: decodeInvestmentThesis(row.string("investment_thesis_json")),
             whyImportant: row.string("why_important"),
             actionItems: actions,
             deadline: row.optionalString("deadline").flatMap { $0.isEmpty ? nil : $0 },
@@ -501,7 +517,11 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         )
     }
 
-    private static func normalizedBriefItem(_ item: DailyBriefItem, allowsAction: Bool) -> DailyBriefItem {
+    private static func normalizedBriefItem(
+        _ item: DailyBriefItem,
+        allowsAction: Bool,
+        investmentThesis: InvestmentThesis?
+    ) -> DailyBriefItem {
         let rawAction = item.suggestedAction?.trimmingCharacters(in: .whitespacesAndNewlines)
         let action = allowsAction && rawAction?.lowercased() != "null" && rawAction?.isEmpty == false ? rawAction : nil
         return DailyBriefItem(
@@ -510,10 +530,21 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             title: item.title,
             sender: item.sender,
             summary: item.summary,
+            investmentThesis: investmentThesis ?? item.investmentThesis,
             whyItMatters: item.whyItMatters,
             suggestedAction: action,
             category: item.category
         )
+    }
+
+    private static func encodeInvestmentThesis(_ thesis: InvestmentThesis?) -> String {
+        guard let thesis, let data = try? JSONEncoder().encode(thesis) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func decodeInvestmentThesis(_ value: String) -> InvestmentThesis? {
+        guard !value.isEmpty else { return nil }
+        return try? JSONDecoder().decode(InvestmentThesis.self, from: Data(value.utf8))
     }
 
     private func seedDemoData(_ db: OpaquePointer) throws {
@@ -589,6 +620,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
           user_attention INTEGER NOT NULL DEFAULT 0,
           importance INTEGER NOT NULL DEFAULT 0,
           summary TEXT NOT NULL DEFAULT '',
+          investment_thesis_json TEXT NOT NULL DEFAULT '',
           why_important TEXT NOT NULL DEFAULT '',
           action_items TEXT NOT NULL DEFAULT '',
           deadline TEXT,

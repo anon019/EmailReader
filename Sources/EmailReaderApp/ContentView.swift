@@ -607,9 +607,13 @@ private struct DailyBriefReaderView: View {
                                     .font(.chineseEditorial(18, weight: .semibold))
                                     .foregroundStyle(ReaderTheme.ink)
                                     .multilineTextAlignment(.leading)
+                                if let thesis = item.investmentThesis {
+                                    InvestmentThesisView(thesis: thesis, compact: true)
+                                        .padding(.top, 2)
+                                }
                                 Text(item.summary)
                                     .font(.system(size: 13))
-                                    .foregroundStyle(ReaderTheme.ink)
+                                    .foregroundStyle(item.investmentThesis == nil ? ReaderTheme.ink : ReaderTheme.muted)
                                     .lineSpacing(4)
                                     .multilineTextAlignment(.leading)
                                 Text(item.whyItMatters)
@@ -951,10 +955,18 @@ private struct ReaderView: View {
     private func interpretation(_ thread: MailThread) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("AI 解读")
+                Text(thread.investmentThesis == nil ? "AI 解读" : "投资研究解读")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.8)
                     .foregroundStyle(ReaderTheme.accent)
+                if let thesis = thread.investmentThesis {
+                    InvestmentThesisView(thesis: thesis, compact: false)
+                        .padding(.top, 4)
+                    Text("邮件概览")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(ReaderTheme.muted)
+                        .padding(.top, 10)
+                }
                 Text(thread.summary)
                     .font(.chineseEditorial(19, weight: .medium))
                     .foregroundStyle(ReaderTheme.ink)
@@ -1000,6 +1012,103 @@ private struct ReaderView: View {
         .padding(.leading, 20)
         .overlay(alignment: .leading) {
             Rectangle().fill(ReaderTheme.accent).frame(width: 2)
+        }
+    }
+}
+
+private struct InvestmentThesisView: View {
+    let thesis: InvestmentThesis
+    let compact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 16) {
+            HStack(spacing: 8) {
+                Text("核心 THESIS")
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(ReaderTheme.accent)
+                if let horizon = thesis.horizon, !horizon.isEmpty {
+                    Text(horizon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ReaderTheme.muted)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(ReaderTheme.selected, in: Capsule())
+                }
+                Spacer()
+            }
+
+            Text(thesis.thesis)
+                .font(.chineseEditorial(compact ? 17 : 22, weight: .semibold))
+                .foregroundStyle(ReaderTheme.ink)
+                .lineSpacing(compact ? 4 : 6)
+                .multilineTextAlignment(.leading)
+
+            if !thesis.tickers.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(thesis.tickers, id: \.self) { ticker in
+                        Text(ticker)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(ReaderTheme.accent)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .overlay(Capsule().stroke(ReaderTheme.accent.opacity(0.35)))
+                    }
+                }
+            }
+
+            if !thesis.evidence.isEmpty {
+                thesisList("关键依据", items: thesis.evidence, symbol: "checkmark")
+            }
+
+            if !thesis.catalysts.isEmpty || !thesis.risks.isEmpty {
+                if compact {
+                    if !thesis.catalysts.isEmpty {
+                        thesisList("潜在催化剂", items: thesis.catalysts, symbol: "arrow.up.right")
+                    }
+                    if !thesis.risks.isEmpty {
+                        thesisList("证伪与风险", items: thesis.risks, symbol: "exclamationmark")
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 26) {
+                        if !thesis.catalysts.isEmpty {
+                            thesisList("潜在催化剂", items: thesis.catalysts, symbol: "arrow.up.right")
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                        if !thesis.risks.isEmpty {
+                            thesisList("证伪与风险", items: thesis.risks, symbol: "exclamationmark")
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(compact ? 14 : 18)
+        .background(ReaderTheme.queue.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(ReaderTheme.divider, lineWidth: 1)
+        }
+    }
+
+    private func thesisList(_ title: String, items: [String], symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(ReaderTheme.muted)
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(ReaderTheme.accent)
+                        .padding(.top, 3)
+                    Text(item)
+                        .font(.system(size: compact ? 11 : 12))
+                        .foregroundStyle(ReaderTheme.ink)
+                        .lineSpacing(3)
+                        .multilineTextAlignment(.leading)
+                }
+            }
         }
     }
 }

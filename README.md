@@ -12,6 +12,7 @@ Email Reader is a local-first macOS email intelligence desk for Gmail. It turns 
 - Initial 7-day Gmail import and subsequent `historyId` incremental sync.
 - Deterministic rules classify every message and preserve risk alerts. Ollama `qwen3.5:4b` deeply summarizes only briefing candidates that are new or changed.
 - Long mail is summarized in selected sections and consolidated into one fact-focused result. Summary fingerprints avoid reprocessing unchanged bodies.
+- Investment Substack mail has a dedicated local research pass: core Thesis, supporting evidence, catalysts, disconfirming risks, explicit tickers, and time horizon are stored as structured data instead of flattened into a generic summary.
 - Optional Luna Medium output can be installed as a globally edited briefing; the UI records and displays the provider that actually generated the current brief.
 - System-detected risks and user-followed mail are stored separately, so reanalysis cannot erase a user decision or hide a security alert.
 - Every successful briefing is archived locally for daily history review.
@@ -41,7 +42,7 @@ The app requests only profile identity plus `gmail.readonly`.
 - Gmail access is read-only. The app cannot send, delete, archive, label, or mark Gmail messages as read.
 - Remote images and tracking pixels are not rendered.
 - Email content is treated as untrusted input. Local and optional cloud prompts explicitly reject instructions embedded in mail.
-- The daily scheduled path never sends raw bodies to Luna. Only selected local summaries, subjects, sender labels, categories, scores, and actions are included in the compact envelope.
+- The daily scheduled path never sends raw bodies to Luna. Only selected local summaries, structured investment Thesis fields, subjects, sender labels, categories, scores, and actions are included in the compact envelope.
 
 ## Data locations
 

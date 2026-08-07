@@ -4,6 +4,7 @@ import FoundationModels
 public struct MailAnalysisResult: Sendable {
     public let category: MailCategory
     public let summary: String
+    public let investmentThesis: InvestmentThesis?
     public let whyImportant: String
     public let actionItems: [String]
     public let deadline: String?
@@ -14,6 +15,7 @@ public struct MailAnalysisResult: Sendable {
     public init(
         category: MailCategory,
         summary: String,
+        investmentThesis: InvestmentThesis? = nil,
         whyImportant: String,
         actionItems: [String],
         deadline: String?,
@@ -23,6 +25,7 @@ public struct MailAnalysisResult: Sendable {
     ) {
         self.category = category
         self.summary = summary
+        self.investmentThesis = investmentThesis
         self.whyImportant = whyImportant
         self.actionItems = actionItems
         self.deadline = deadline
@@ -73,7 +76,7 @@ public actor MailAnalyzer {
                 </email_content>
 
                 只返回一个 JSON 对象，不要 Markdown。字段：
-                category（只能是：行动事项、账户与安全、账单与财务、工作与项目、资讯与阅读、个人往来、一般通知）、
+                category（只能是：行动事项、账户与安全、账单与财务、投资研究、工作与项目、资讯与阅读、个人往来、一般通知）、
                 summary（两句话以内）、why_important、action_items（字符串数组）、deadline（无则空字符串）、
                 importance（0 到 100 整数）、needsAttention（布尔值；仅安全风险、明确截止、付款、必须回复或临近行程为 true）。
                 """)
@@ -131,11 +134,21 @@ public actor MailAnalyzer {
         let strongResearch = containsAny(senderText, ["semianalysis", "diligence", "asymmetrical", "funda", "garrettsignal"]) || containsAny(subjectText, [
             "research", "analysis", "earnings", "review", "preview", "deep", "signal", "gemini", "gcp", "cxl", "memory", "glp-1", "weight loss", "投资", "市場"
         ])
+        let investmentNewsletter = newsletter && (
+            containsAny(senderText, [
+                "semianalysis", "diligence", "asymmetrical", "funda", "garrett", "bepresearch",
+                "smallcaptreasures", "irrationalanalysis", "chamath", "rjccapital", "definvestor"
+            ]) || containsAny(text, [
+                "investment thesis", "investing", "stock", "equity", "earnings", "valuation", "portfolio",
+                "bull case", "bear case", "free cash flow", "ticker", "market memo", "投资", "股票", "估值", "持仓"
+            ])
+        )
 
         let category: MailCategory
         if securityEvent { category = .security }
         else if financeDocument || paymentUrgent { category = .finance }
         else if actionRequested { category = .action }
+        else if investmentNewsletter { category = .investment }
         else if portfolioSignal { category = .finance }
         else if systemNotice || marketing || genericDigest { category = .notification }
         else if newsletter { category = .reading }
@@ -148,6 +161,7 @@ public actor MailAnalyzer {
         else if paymentUrgent || actionRequested { importance = 84 }
         else if financeDocument { importance = 70 }
         else if portfolioSignal { importance = 68 }
+        else if investmentNewsletter { importance = strongResearch ? 72 : 64 }
         else if genericDigest { importance = 26 }
         else if newsletter && strongResearch { importance = 66 }
         else if newsletter { importance = 54 }
@@ -167,6 +181,8 @@ public actor MailAnalyzer {
                 : financeDocument
                 ? "收到“\(subject)”财务凭证或账户结单，建议核对关键金额与异常记录后归档。"
                 : "“\(subject)”涉及付款异常或逾期，需要尽快核对。"
+        case .investment:
+            summary = "\(senderLabel) 发布投资研究“\(subject)”。\(excerpt.isEmpty ? "系统将重点提炼核心 Thesis、依据、催化剂与风险。" : excerpt)"
         case .action:
             summary = "“\(subject)”包含明确的确认或回复要求。\(excerpt.isEmpty ? "" : "邮件要点：\(excerpt)")"
         case .reading:
@@ -190,6 +206,7 @@ public actor MailAnalyzer {
                 : portfolioSignal
                 ? "与当前持仓或投资组合直接相关，值得优先于普通市场资讯查看。"
                 : "属于需要留档的账户资料，但没有识别到即时付款风险。"
+        case .investment: whyImportant = "这是投资研究内容；应优先理解作者的核心 Thesis、证据、催化剂和证伪条件，而非逐段阅读。"
         case .action: whyImportant = "邮件直接要求确认、审阅或回复，遗漏可能造成后续阻塞。"
         case .reading: whyImportant = importance >= 60 ? "主题与你近期关注的研究、市场或投资信息相关，值得集中阅读。" : "属于可批量浏览的资讯内容，没有即时行动要求。"
         case .project: whyImportant = "包含工作或项目上下文，可能影响后续判断。"

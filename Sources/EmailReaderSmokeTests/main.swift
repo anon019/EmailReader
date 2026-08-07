@@ -30,14 +30,24 @@ struct EmailReaderSmokeTests {
         try database.updateAnalysis(
             threadID: "demo-newsletter",
             result: MailAnalysisResult(
-                category: .reading, summary: "重新分析", whyImportant: "测试用户关注不被覆盖",
+                category: .reading, summary: "重新分析",
+                investmentThesis: InvestmentThesis(
+                    thesis: "作者认为 AI 收件箱将把价值从逐封阅读转移到决策型信息整理。",
+                    evidence: ["个人代理开始承担收件箱筛选"],
+                    catalysts: ["系统级代理能力普及"],
+                    risks: ["自动整理的准确率不足"],
+                    tickers: ["AAPL"],
+                    horizon: "未来 12 个月"
+                ),
+                whyImportant: "测试用户关注不被覆盖",
                 actionItems: [], deadline: nil, importance: 60, needsAttention: false, confidence: 0.9
             )
         )
         guard let manuallyFocused = try database.loadThread(id: "demo-newsletter"),
               manuallyFocused.userAttention,
               !manuallyFocused.predictedAttention,
-              manuallyFocused.needsAttention else {
+              manuallyFocused.needsAttention,
+              manuallyFocused.investmentThesis?.tickers == ["AAPL"] else {
             throw SmokeFailure("user attention was overwritten by model analysis")
         }
         let repeatedNewsletter = MailThread(
@@ -66,8 +76,10 @@ struct EmailReaderSmokeTests {
             isDemo: false
         )
         try database.upsertThread(repeatedNewsletter)
-        guard try database.loadThread(id: manuallyFocused.id)?.summary == "重新分析" else {
-            throw SmokeFailure("unchanged Gmail sync overwrote a cached deep summary")
+        guard let preservedNewsletter = try database.loadThread(id: manuallyFocused.id),
+              preservedNewsletter.summary == "重新分析",
+              preservedNewsletter.investmentThesis?.thesis == manuallyFocused.investmentThesis?.thesis else {
+            throw SmokeFailure("unchanged Gmail sync overwrote a cached deep summary or investment thesis")
         }
 
         let repeatedHeaders = GmailHeaderNormalizer.normalize([
@@ -97,6 +109,16 @@ struct EmailReaderSmokeTests {
         guard securityArticle.category == .reading, !securityArticle.needsAttention else {
             throw SmokeFailure("security-themed newsletter was mistaken for an account event")
         }
+        let investmentSubstack = await analyzer.analyzeFallback(
+            subject: "$AAOI Earnings Preview: Can Margins Expand?",
+            sender: "asymmetricalbets@substack.com",
+            body: "The investment thesis depends on revenue growth, valuation and a hyperscaler catalyst."
+        )
+        guard investmentSubstack.category == .investment,
+              investmentSubstack.importance >= 60,
+              !investmentSubstack.needsAttention else {
+            throw SmokeFailure("investment Substack was not routed to investment research")
+        }
         let portfolio = await analyzer.analyzeFallback(
             subject: "FYI：分析师评级变化",
             sender: "ibkr@interactivebrokers.com",
@@ -123,8 +145,26 @@ struct EmailReaderSmokeTests {
         )
         guard let compactText = String(data: try Data(contentsOf: compactURL), encoding: .utf8),
               compact.mails.count == briefIDs.count,
-              !compactText.contains("bodyPlain") else {
+              !compactText.contains("bodyPlain"),
+              compactText.contains("investmentThesis") else {
             throw SmokeFailure("compact Luna input was incomplete or included raw bodies")
+        }
+
+        let thesisCloudItem = DailyBriefItem(
+            id: "thesis-cloud", threadID: "demo-newsletter", title: "云端编排", sender: "Demo",
+            summary: "云端只调整编辑表达", whyItMatters: "本地 Thesis 必须保留", suggestedAction: nil,
+            category: .reading
+        )
+        let thesisCloudBrief = DailyBrief(
+            date: "2026-08-07", generatedAt: ISO8601DateFormatter().string(from: .now), periodLabel: "过去24小时",
+            headline: "Thesis 保留测试", overview: "测试", total: 1,
+            priority: [], noteworthy: [thesisCloudItem], later: [], lowPriorityCount: 0
+        )
+        let thesisCloudURL = directory.appendingPathComponent("thesis-cloud.json")
+        try JSONEncoder().encode(thesisCloudBrief).write(to: thesisCloudURL)
+        try database.installDailyBrief(from: thesisCloudURL)
+        guard try database.loadDailyBrief().noteworthy.first?.investmentThesis?.tickers == ["AAPL"] else {
+            throw SmokeFailure("cloud brief installation discarded the local investment thesis")
         }
 
         let alerts = (0..<5).map { index in
@@ -183,6 +223,26 @@ struct EmailReaderSmokeTests {
             throw SmokeFailure("duplicate cloud brief mappings were accepted")
         } catch {
             // Expected validation failure.
+        }
+
+        let promotedNewsletterItem = DailyBriefItem(
+            id: "promoted-newsletter", threadID: "demo-invoice", title: "普通信息不应变成待办", sender: "Demo",
+            summary: "测试", whyItMatters: "测试", suggestedAction: "立即阅读", category: .investment
+        )
+        let promotedNewsletterBrief = DailyBrief(
+            date: "2026-08-07", generatedAt: ISO8601DateFormatter().string(from: .now), periodLabel: "过去24小时",
+            headline: "优先级语义测试", overview: "测试", total: 1,
+            priority: [promotedNewsletterItem], noteworthy: [], later: [], lowPriorityCount: 0
+        )
+        let promotedNewsletterURL = directory.appendingPathComponent("promoted-newsletter.json")
+        try JSONEncoder().encode(promotedNewsletterBrief).write(to: promotedNewsletterURL)
+        do {
+            try database.installDailyBrief(from: promotedNewsletterURL)
+            throw SmokeFailure("ordinary investment research was accepted as a priority action")
+        } catch is SmokeFailure {
+            throw SmokeFailure("ordinary investment research was accepted as a priority action")
+        } catch {
+            // Expected semantic validation failure.
         }
 
         let noisyActionItem = DailyBriefItem(

@@ -34,14 +34,14 @@ public enum DailyBriefBuilder {
         let noteworthyThreads = Array(todaysThreads.filter {
             !priorityIDs.contains($0.id) &&
             $0.importance >= 55 &&
-            [.reading, .project, .finance, .personal].contains($0.category)
+            [.investment, .reading, .project, .finance, .personal].contains($0.category)
         }.prefix(4))
         let noteworthyIDs = Set(noteworthyThreads.map(\.id))
 
         let laterThreads = Array(todaysThreads.filter {
             !priorityIDs.contains($0.id) &&
             !noteworthyIDs.contains($0.id) &&
-            $0.category == .reading
+            [.investment, .reading].contains($0.category)
         }.prefix(4))
         let surfacedIDs = priorityIDs.union(noteworthyIDs).union(laterThreads.map(\.id))
         let surfacedRecentCount = recentThreads.filter { surfacedIDs.contains($0.id) }.count
@@ -90,6 +90,7 @@ public enum DailyBriefBuilder {
             title: thread.subject,
             sender: thread.senderName.isEmpty ? thread.senderEmail : thread.senderName,
             summary: thread.summary,
+            investmentThesis: thread.investmentThesis,
             whyItMatters: thread.whyImportant,
             suggestedAction: action,
             category: thread.category

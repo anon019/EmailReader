@@ -40,8 +40,9 @@ If Luna editing or validation fails, do not install a partial cloud result. The 
 
 - Write concise Simplified Chinese.
 - This is not a mailbox mirror. Merge repeated topics and surface only information that changes a decision, requires action, or deserves deliberate reading.
-- `priority`: at most 4 items. Use only for a concrete reply/confirmation, account security event, payment problem, deadline, or imminent itinerary.
+- `priority`: at most 4 items. Use only when the compact input marks `needsAttention=true`, or when the local category is `行动事项`/`账户与安全` with a concrete action. A newsletter, promotion, research thesis, or distant campaign date never belongs here.
 - `noteworthy`: at most 5 items. Select the strongest research, market, project, or personal signals and explain why they matter.
+- Investment Substack is a dedicated research class. Preserve the locally extracted core Thesis, evidence, catalysts, disconfirming risks, tickers, and time horizon. Never invent a missing field; related articles may be edited into a theme, but each displayed item keeps one exact source thread ID.
 - `later`: at most 5 items. Valuable but non-urgent reading.
 - Promotions, generic invitations, repetitive market roundups, routine status mail, and weak newsletters count toward `lowPriorityCount` and should not appear as items.
 - Never infer facts that are not in the email. Distinguish a sender's claim from a verified fact.
@@ -76,4 +77,4 @@ If Luna editing or validation fails, do not install a partial cloud result. The 
 }
 ```
 
-Allowed category values: `行动事项`, `账户与安全`, `账单与财务`, `工作与项目`, `资讯与阅读`, `个人往来`, `一般通知`.
+Allowed category values: `行动事项`, `账户与安全`, `账单与财务`, `投资研究`, `工作与项目`, `资讯与阅读`, `个人往来`, `一般通知`.
