@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["date", "generatedAt", "periodLabel", "headline", "overview", "total", "priority", "noteworthy", "later", "lowPriorityCount"],
+  "properties": {
+    "date": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "periodLabel": { "type": "string" },
+    "headline": { "type": "string" },
+    "overview": { "type": "string" },
+    "total": { "type": "integer", "minimum": 0 },
+    "priority": { "$ref": "#/$defs/items" },
+    "noteworthy": { "$ref": "#/$defs/items" },
+    "later": { "$ref": "#/$defs/items" },
+    "lowPriorityCount": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "threadID", "title", "sender", "summary", "whyItMatters", "suggestedAction", "category"],
+      "properties": {
+        "id": { "type": "string" },
+        "threadID": { "type": "string" },
+        "title": { "type": "string" },
+        "sender": { "type": "string" },
+        "summary": { "type": "string" },
+        "whyItMatters": { "type": "string" },
+        "suggestedAction": { "type": ["string", "null"] },
+        "category": {
+          "type": "string",
+          "enum": ["行动事项", "账户与安全", "账单与财务", "工作与项目", "资讯与阅读", "个人往来", "一般通知"]
+        }
+      }
+    }
+  }
+}
