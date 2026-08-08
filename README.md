@@ -5,6 +5,7 @@ Email Reader is a local-first macOS email intelligence desk for Gmail. It turns 
 ## Version 1.0
 
 - Brief-first native SwiftUI workspace; the original mailbox is a collapsed evidence library.
+- Intelligence-first sidebar with daily alert status, dynamic cross-mail research themes, thesis-weighted ticker focus, readable mail-type counts, and source/history drill-down.
 - Local SQLite database; production builds never insert demo email.
 - Gmail OAuth Desktop App flow with PKCE and a loopback callback.
 - First import is limited to the last 7 days of inbox mail; later runs use Gmail history for incremental changes.

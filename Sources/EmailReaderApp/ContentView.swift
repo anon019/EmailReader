@@ -7,7 +7,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             SidebarView()
-                .frame(width: 226)
+                .frame(width: 304)
             Divider().overlay(ReaderTheme.divider)
             if case .library(.today) = model.selection, model.showingDailyBrief {
                 DailyBriefReaderView()
@@ -18,7 +18,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ThreadQueueView()
-                    .frame(width: 390)
+                    .frame(width: 360)
                 Divider().overlay(ReaderTheme.divider)
                 ReaderView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,65 +36,103 @@ private struct SidebarView: View {
     @EnvironmentObject private var model: AppModel
     @State private var sourceLibraryExpanded = false
 
-    private let primaryFilters: [LibraryFilter] = [.today, .attention, .later, .completed, .history]
-    private let sourceFilters: [LibraryFilter] = [.unread, .all]
+    private let primaryFilters: [LibraryFilter] = [.today, .attention, .unread, .later]
+    private let sourceFilters: [LibraryFilter] = [.completed, .history, .all]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("EMAIL INTELLIGENCE")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.7)
-                    .foregroundStyle(ReaderTheme.accent)
-                Text("邮件情报")
-                    .font(.editorial(27, weight: .semibold))
-                    .foregroundStyle(ReaderTheme.ink)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 22)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("EMAIL INTELLIGENCE")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.75)
+                            .foregroundStyle(ReaderTheme.accent)
+                        Text("今日情报台")
+                            .font(.editorial(29, weight: .semibold))
+                            .foregroundStyle(ReaderTheme.ink)
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 26)
+                    .padding(.bottom, 20)
 
-            Text("工作台")
-                .sidebarSectionTitle()
-            ForEach(primaryFilters) { filter in
-                SidebarButton(
-                    title: filter.rawValue,
-                    symbol: filter.symbol,
-                    count: filter == .today ? model.brief.priority.count : filter == .history ? nil : model.counts[filter],
-                    selected: model.selection == .library(filter)
-                ) { model.changeSelection(.library(filter)) }
-            }
+                    todayPulse
 
-            DisclosureGroup(isExpanded: $sourceLibraryExpanded) {
-                VStack(spacing: 0) {
-                    ForEach(sourceFilters) { filter in
+                    Text("工作台")
+                        .sidebarSectionTitle()
+                    ForEach(primaryFilters) { filter in
                         SidebarButton(
-                            title: filter.rawValue,
+                            title: workbenchTitle(filter),
                             symbol: filter.symbol,
-                            count: model.counts[filter],
+                            count: workbenchCount(filter),
                             selected: model.selection == .library(filter)
                         ) { model.changeSelection(.library(filter)) }
                     }
-                    ForEach(MailCategory.allCases) { category in
-                        SidebarButton(
-                            title: category.rawValue,
-                            symbol: category.symbol,
-                            count: nil,
-                            selected: model.selection == .category(category)
-                        ) { model.changeSelection(.category(category)) }
-                    }
-                }
-                .padding(.top, 4)
-            } label: {
-                Label("邮件来源库", systemImage: "archivebox")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(ReaderTheme.muted)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 22)
-            .tint(ReaderTheme.muted)
 
-            Spacer(minLength: 12)
+                    if !model.dailyResearchThemes.isEmpty {
+                        Text("今日关注主题")
+                            .sidebarSectionTitle(topPadding: 22)
+                        VStack(spacing: 0) {
+                            ForEach(model.dailyResearchThemes.prefix(4)) { theme in
+                                ResearchThemeButton(theme: theme) { model.openResearchTheme(theme) }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
+
+                    Text("邮件类型")
+                        .sidebarSectionTitle(topPadding: 20)
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 7), GridItem(.flexible(), spacing: 7)],
+                        spacing: 7
+                    ) {
+                        ForEach(model.dailyCategoryCounts) { entry in
+                            CategoryButton(
+                                entry: entry,
+                                selected: model.selection == .category(entry.category)
+                            ) { model.changeSelection(.category(entry.category)) }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    if !model.dailyTickerCounts.isEmpty {
+                        Text("重点标的")
+                            .sidebarSectionTitle(topPadding: 20)
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 72), spacing: 7)],
+                            alignment: .leading,
+                            spacing: 7
+                        ) {
+                            ForEach(model.dailyTickerCounts) { ticker in
+                                TickerButton(ticker: ticker) { model.openTicker(ticker) }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+
+                    DisclosureGroup(isExpanded: $sourceLibraryExpanded) {
+                        VStack(spacing: 0) {
+                            ForEach(sourceFilters) { filter in
+                                SidebarButton(
+                                    title: filter.rawValue,
+                                    symbol: filter.symbol,
+                                    count: filter == .history ? model.briefHistory.count : model.counts[filter],
+                                    selected: model.selection == .library(filter)
+                                ) { model.changeSelection(.library(filter)) }
+                            }
+                        }
+                        .padding(.top, 5)
+                    } label: {
+                        Label("来源与历史", systemImage: "archivebox")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(ReaderTheme.muted)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, 22)
+                    .tint(ReaderTheme.muted)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
@@ -102,7 +140,7 @@ private struct SidebarView: View {
                         .fill(model.account?.authState == "connected" ? ReaderTheme.positive : ReaderTheme.accent)
                         .frame(width: 7, height: 7)
                     Text(model.account?.email ?? "未连接 Gmail")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(ReaderTheme.ink)
                         .lineLimit(1)
                 }
@@ -110,16 +148,66 @@ private struct SidebarView: View {
                     model.showingSettings = true
                 } label: {
                     Label("账户、模型与更新", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ReaderTheme.muted)
             }
-            .padding(18)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 17)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .top) { Divider().overlay(ReaderTheme.divider) }
         }
         .background(ReaderTheme.sidebar)
+    }
+
+    private var todayPulse: some View {
+        HStack(alignment: .top, spacing: 13) {
+            Rectangle()
+                .fill(ReaderTheme.accent)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("今日必须过目")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(ReaderTheme.accent)
+                    Spacer()
+                    Text("\(model.dailyAlertThreads.count)")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(ReaderTheme.accent)
+                }
+                Text(model.dailyAlertThreads.count == 0 ? "警报已清零" : "\(model.dailyAlertThreads.count) 项警报待核实")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(ReaderTheme.ink)
+                Text("\(model.dailyUnreadThreads.count) 封今日未读 · \(model.dailyInvestmentThesisCount) 封投资研究已提炼 thesis")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ReaderTheme.muted)
+                    .lineSpacing(3)
+            }
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 14)
+        .background(ReaderTheme.reader.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 14)
+        .padding(.bottom, 22)
+    }
+
+    private func workbenchTitle(_ filter: LibraryFilter) -> String {
+        switch filter {
+        case .today: "今日总览"
+        case .attention: "警报巡检"
+        case .unread: "全部未读"
+        case .later: "稍后研究"
+        default: filter.rawValue
+        }
+    }
+
+    private func workbenchCount(_ filter: LibraryFilter) -> Int {
+        switch filter {
+        case .today: model.dailyUnreadThreads.count
+        case .later: model.brief.later.count
+        default: model.counts[filter]
+        }
     }
 }
 
@@ -129,29 +217,148 @@ private struct SidebarButton: View {
     let count: Int?
     let selected: Bool
     let action: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .frame(width: 16)
+                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .frame(width: 19)
                 Text(title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 15, weight: selected ? .semibold : .regular))
                 Spacer()
-                if let count, count > 0 {
+                if let count {
                     Text("\(count)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(selected ? ReaderTheme.accent : ReaderTheme.muted)
                 }
             }
             .foregroundStyle(selected ? ReaderTheme.ink : ReaderTheme.muted)
             .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(selected ? ReaderTheme.selected : .clear, in: RoundedRectangle(cornerRadius: 7))
-            .padding(.horizontal, 8)
+            .frame(height: 42)
+            .background(
+                selected ? ReaderTheme.selected : isHovered ? ReaderTheme.reader.opacity(0.55) : .clear,
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .padding(.horizontal, 7)
         }
         .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovered }
+        }
+    }
+}
+
+private struct ResearchThemeButton: View {
+    let theme: DailyResearchTheme
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(ReaderTheme.accent)
+                        .frame(width: 6, height: 6)
+                    Text(theme.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(ReaderTheme.ink)
+                    Spacer()
+                    Text("\(theme.signalLabel) · \(theme.count)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(ReaderTheme.accent)
+                }
+                Text(theme.subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(ReaderTheme.muted)
+                    .lineLimit(2)
+                    .padding(.leading, 14)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .background(isHovered ? ReaderTheme.reader.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovered }
+        }
+    }
+}
+
+private struct TickerButton: View {
+    let ticker: DailyTickerCount
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(ticker.ticker)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                if ticker.count > 1 {
+                    Text("\(ticker.count)篇")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(ReaderTheme.muted)
+                }
+            }
+            .foregroundStyle(ReaderTheme.accent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(isHovered ? ReaderTheme.selected : ReaderTheme.reader.opacity(0.55), in: Capsule())
+            .overlay(Capsule().stroke(ReaderTheme.accent.opacity(0.28)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovered }
+        }
+    }
+}
+
+private struct CategoryButton: View {
+    let entry: DailyCategoryCount
+    let selected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: entry.category.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 14)
+                Text(shortTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Text("\(entry.count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(selected ? ReaderTheme.accent : ReaderTheme.muted)
+            }
+            .foregroundStyle(selected ? ReaderTheme.ink : ReaderTheme.muted)
+            .padding(.horizontal, 9)
+            .frame(height: 34)
+            .background(
+                selected ? ReaderTheme.selected : isHovered ? ReaderTheme.reader.opacity(0.65) : ReaderTheme.reader.opacity(0.38),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovered }
+        }
+    }
+
+    private var shortTitle: String {
+        switch entry.category {
+        case .security: "账户安全"
+        case .finance: "账单财务"
+        case .project: "工作项目"
+        case .reading: "资讯阅读"
+        default: entry.category.rawValue
+        }
     }
 }
 
@@ -1258,12 +1465,13 @@ private struct OriginalMailDisclosure: View {
 }
 
 private extension View {
-    func sidebarSectionTitle() -> some View {
+    func sidebarSectionTitle(topPadding: CGFloat = 0) -> some View {
         self
-            .font(.system(size: 10, weight: .semibold))
-            .tracking(0.7)
-            .foregroundStyle(ReaderTheme.faint)
+            .font(.system(size: 12, weight: .bold))
+            .tracking(0.55)
+            .foregroundStyle(ReaderTheme.muted)
             .padding(.horizontal, 20)
-            .padding(.bottom, 7)
+            .padding(.top, topPadding)
+            .padding(.bottom, 8)
     }
 }

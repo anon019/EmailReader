@@ -16,6 +16,23 @@ struct DailyCategoryCount: Identifiable {
     var id: String { category.id }
 }
 
+struct DailyResearchTheme: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let signalLabel: String
+    let threadIDs: [String]
+    var count: Int { threadIDs.count }
+}
+
+struct DailyTickerCount: Identifiable {
+    let ticker: String
+    let count: Int
+    let threadIDs: [String]
+    let relevanceScore: Int
+    var id: String { ticker }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var selection: SidebarSelection = .library(.today)
@@ -40,6 +57,9 @@ final class AppModel: ObservableObject {
     @Published var dailyUnreadThreads: [MailThread] = []
     @Published var dailyAlertThreads: [MailThread] = []
     @Published var dailyCategoryCounts: [DailyCategoryCount] = []
+    @Published var dailyResearchThemes: [DailyResearchTheme] = []
+    @Published var dailyTickerCounts: [DailyTickerCount] = []
+    @Published var dailyInvestmentThesisCount = 0
 
     let database: EmailReaderDatabase
     private var briefMonitor: AnyCancellable?
@@ -113,6 +133,10 @@ final class AppModel: ObservableObject {
                 let count = dailyThreads.lazy.filter { $0.category == category }.count
                 return count > 0 ? DailyCategoryCount(category: category, count: count) : nil
             }
+            let investmentThreads = dailyThreads.filter { $0.category == .investment }
+            dailyInvestmentThesisCount = investmentThreads.lazy.filter { $0.investmentThesis != nil }.count
+            dailyResearchThemes = Self.researchThemes(from: investmentThreads)
+            dailyTickerCounts = Self.tickerCounts(from: investmentThreads)
             let briefIDs = brief.priority.map(\.threadID) + brief.noteworthy.map(\.threadID) + brief.later.map(\.threadID)
             briefThreadStates = Dictionary(uniqueKeysWithValues: try briefIDs.compactMap { id in
                 try database.loadThread(id: id).map { (id, $0.readingState) }
@@ -142,6 +166,108 @@ final class AppModel: ObservableObject {
         selection = value
         showingDailyBrief = value == .library(.today)
         withAnimation(.snappy(duration: 0.22)) { reload(preserveSelection: false) }
+    }
+
+    func openResearchTheme(_ theme: DailyResearchTheme) {
+        openInvestmentThread(theme.threadIDs.first)
+    }
+
+    func openTicker(_ ticker: DailyTickerCount) {
+        openInvestmentThread(ticker.threadIDs.first)
+    }
+
+    private func openInvestmentThread(_ threadID: String?) {
+        selection = .category(.investment)
+        showingDailyBrief = false
+        reload(preserveSelection: false)
+        guard let threadID else { return }
+        selectedThreadID = threadID
+        do {
+            selectedThread = try database.loadThread(id: threadID)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private static func researchThemes(from threads: [MailThread]) -> [DailyResearchTheme] {
+        struct Definition {
+            let id: String
+            let title: String
+            let subtitle: String
+            let keywords: [String]
+        }
+        let definitions = [
+            Definition(
+                id: "ai-infrastructure", title: "AI 算力基础设施",
+                subtitle: "数据中心、GPU、承购与推理经济性",
+                keywords: ["算力", "spacex", "gpu", "数据中心", "nvda", "microsoft", "msft"]
+            ),
+            Definition(
+                id: "cybersecurity", title: "Cloudflare / 网络安全",
+                subtitle: "NET 经营改善与 AI 安全需求",
+                keywords: ["cloudflare", "网络安全", "cybersecurity", "security", "net"]
+            ),
+            Definition(
+                id: "gold", title: "黄金与贵金属",
+                subtitle: "GOLD、GDX 与风险偏好变化",
+                keywords: ["黄金", "gold", "gdx", "贵金属"]
+            ),
+            Definition(
+                id: "macro-policy", title: "宏观与政策",
+                subtitle: "利率、关税、监管与预测市场",
+                keywords: ["宏观", "利率", "关税", "监管", "polymarket", "fed", "政策"]
+            )
+        ]
+        return definitions.compactMap { definition in
+            let matches = threads.filter { thread in
+                let thesis = thread.investmentThesis
+                let content = ([thread.subject, thread.summary, thesis?.thesis ?? ""] + (thesis?.tickers ?? []))
+                    .joined(separator: " ")
+                    .lowercased()
+                return definition.keywords.contains { content.contains($0.lowercased()) }
+            }
+            guard !matches.isEmpty else { return nil }
+            let signalLabel = matches.count >= 3 ? "强信号" : matches.count == 2 ? "交叉验证" : "观察"
+            return DailyResearchTheme(
+                id: definition.id,
+                title: definition.title,
+                subtitle: definition.subtitle,
+                signalLabel: signalLabel,
+                threadIDs: matches.map(\.id)
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.count == rhs.count ? lhs.title < rhs.title : lhs.count > rhs.count
+        }
+    }
+
+    private static func tickerCounts(from threads: [MailThread]) -> [DailyTickerCount] {
+        var threadIDsByTicker: [String: Set<String>] = [:]
+        var scoreByTicker: [String: Int] = [:]
+        for thread in threads {
+            let rawTickers = thread.investmentThesis?.tickers ?? []
+            let focusWeight = rawTickers.count <= 3 ? 5 : rawTickers.count <= 5 ? 2 : 1
+            for rawTicker in rawTickers {
+                let ticker = rawTicker.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                guard !ticker.isEmpty, ticker.count <= 8 else { continue }
+                threadIDsByTicker[ticker, default: []].insert(thread.id)
+                scoreByTicker[ticker, default: 0] += focusWeight
+            }
+        }
+        let counts: [DailyTickerCount] = threadIDsByTicker.map { ticker, threadIDs in
+            DailyTickerCount(
+                ticker: ticker,
+                count: threadIDs.count,
+                threadIDs: Array(threadIDs),
+                relevanceScore: scoreByTicker[ticker, default: 0]
+            )
+        }
+        let sorted = counts.sorted { lhs, rhs in
+            if lhs.relevanceScore != rhs.relevanceScore { return lhs.relevanceScore > rhs.relevanceScore }
+            if lhs.count != rhs.count { return lhs.count > rhs.count }
+            return lhs.ticker < rhs.ticker
+        }
+        return Array(sorted.prefix(8))
     }
 
     func selectThread(_ id: String?) {
