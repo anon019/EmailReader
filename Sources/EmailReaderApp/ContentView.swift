@@ -715,9 +715,9 @@ private struct DailyBriefReaderView: View {
                         .padding(.top, 16)
 
                     Text(model.brief.overview)
-                        .font(.system(size: 14))
+                        .font(.system(size: 15))
                         .foregroundStyle(ReaderTheme.muted)
-                        .lineSpacing(5)
+                        .lineSpacing(6)
                         .padding(.top, 12)
 
                     HStack(spacing: 0) {
@@ -740,7 +740,7 @@ private struct DailyBriefReaderView: View {
                                 Text("今日警报巡检：已清零")
                                     .font(.system(size: 14, weight: .semibold))
                                 Text("没有尚未核实的安全、付款、截止日期或必须回复事项。")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .foregroundStyle(ReaderTheme.muted)
                             }
                         }
@@ -792,7 +792,7 @@ private struct DailyBriefReaderView: View {
                     .font(.editorial(22, weight: .semibold))
                     .foregroundStyle(ReaderTheme.accent)
                 Text("逐项核实后清零；未处理项目会延续到下一份简报")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(ReaderTheme.faint)
             }
             .padding(.bottom, 10)
@@ -830,7 +830,7 @@ private struct DailyBriefReaderView: View {
                     .font(.editorial(22, weight: .semibold))
                     .foregroundStyle(ReaderTheme.ink)
                 Text("最近 24 小时每一封尚未打开的邮件；已标明类别与关注状态")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(ReaderTheme.faint)
             }
             .padding(.bottom, 10)
@@ -858,27 +858,28 @@ private struct DailyBriefReaderView: View {
                             .fill(thread.readingState == .unread ? ReaderTheme.accent : ReaderTheme.faint)
                             .frame(width: 6, height: 6)
                         Text(thread.readingState == .unread ? "未读" : "已读")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(thread.readingState == .unread ? ReaderTheme.accent : ReaderTheme.faint)
                         Text(thread.senderName.isEmpty ? thread.senderEmail : thread.senderName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(ReaderTheme.muted)
                         Spacer()
                         Label(thread.category.rawValue, systemImage: thread.category.symbol)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(ReaderTheme.faint)
                     }
                     Text(thread.subject)
-                        .font(.chineseEditorial(17, weight: .semibold))
+                        .font(.chineseEditorial(20, weight: .semibold))
                         .foregroundStyle(ReaderTheme.ink)
+                        .lineSpacing(4)
                         .multilineTextAlignment(.leading)
                     if let thesis = thread.investmentThesis {
                         InvestmentThesisView(thesis: thesis, compact: true)
                     } else {
                         Text(thread.summary)
-                            .font(.system(size: 12))
+                            .font(.system(size: 15))
                             .foregroundStyle(ReaderTheme.muted)
-                            .lineSpacing(3)
+                            .lineSpacing(5)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -898,7 +899,7 @@ private struct DailyBriefReaderView: View {
                 .controlSize(.small)
             }
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, 18)
         .overlay(alignment: .bottom) { Divider().overlay(ReaderTheme.divider) }
     }
 
@@ -911,7 +912,7 @@ private struct DailyBriefReaderView: View {
                         .font(.editorial(22, weight: .semibold))
                         .foregroundStyle(accent ? ReaderTheme.accent : ReaderTheme.ink)
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(ReaderTheme.faint)
                 }
                 .padding(.bottom, 10)
@@ -926,30 +927,31 @@ private struct DailyBriefReaderView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     Text(item.sender)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(ReaderTheme.muted)
                                     Spacer()
                                     Label(item.category.rawValue, systemImage: item.category.symbol)
-                                        .font(.system(size: 10))
+                                        .font(.system(size: 11))
                                         .foregroundStyle(ReaderTheme.faint)
                                 }
                                 Text(item.title)
-                                    .font(.chineseEditorial(18, weight: .semibold))
+                                    .font(.chineseEditorial(20, weight: .semibold))
                                     .foregroundStyle(ReaderTheme.ink)
+                                    .lineSpacing(4)
                                     .multilineTextAlignment(.leading)
                                 if let thesis = item.investmentThesis {
                                     InvestmentThesisView(thesis: thesis, compact: true)
                                         .padding(.top, 2)
                                 }
                                 Text(item.summary)
-                                    .font(.system(size: 13))
+                                    .font(.system(size: 15))
                                     .foregroundStyle(item.investmentThesis == nil ? ReaderTheme.ink : ReaderTheme.muted)
-                                    .lineSpacing(4)
+                                    .lineSpacing(5)
                                     .multilineTextAlignment(.leading)
                                 Text(item.whyItMatters)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 14))
                                     .foregroundStyle(ReaderTheme.muted)
-                                    .lineSpacing(3)
+                                    .lineSpacing(4)
                                     .multilineTextAlignment(.leading)
                                 if let action = item.suggestedAction,
                                    !action.isEmpty,
@@ -961,7 +963,7 @@ private struct DailyBriefReaderView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 18)
+                        .padding(.vertical, 22)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -1222,9 +1224,9 @@ private struct ReaderView: View {
             }
 
             Text(thread.subject)
-                .font(.chineseEditorial(32, weight: .semibold))
+                .font(.chineseEditorial(34, weight: .semibold))
                 .foregroundStyle(ReaderTheme.ink)
-                .lineSpacing(4)
+                .lineSpacing(6)
                 .padding(.top, 12)
 
             HStack(spacing: 8) {
@@ -1253,7 +1255,7 @@ private struct ReaderView: View {
                         .foregroundStyle(ReaderTheme.muted)
                         .tracking(0.4)
                     Text("原文只在需要核实时展开；日常决策以解读和行动为主。")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(ReaderTheme.faint)
                 }
                 Spacer()
@@ -1298,26 +1300,26 @@ private struct ReaderView: View {
                         .padding(.top, 10)
                 }
                 Text(thread.summary)
-                    .font(.chineseEditorial(19, weight: .medium))
+                    .font(.chineseEditorial(21, weight: .medium))
                     .foregroundStyle(ReaderTheme.ink)
-                    .lineSpacing(6)
+                    .lineSpacing(8)
             }
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("为什么值得关注")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(ReaderTheme.muted)
                 Text(thread.whyImportant)
-                    .font(.system(size: 13))
+                    .font(.system(size: 15))
                     .foregroundStyle(ReaderTheme.ink)
-                    .lineSpacing(4)
+                    .lineSpacing(5)
             }
 
             if !thread.actionItems.isEmpty {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
                         Text("建议行动")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         if let deadline = thread.deadline {
                             Label(deadline, systemImage: "calendar.badge.clock")
@@ -1332,8 +1334,9 @@ private struct ReaderView: View {
                                 .foregroundStyle(ReaderTheme.accent)
                                 .padding(.top, 4)
                             Text(item)
-                                .font(.system(size: 13))
+                                .font(.system(size: 15))
                                 .foregroundStyle(ReaderTheme.ink)
+                                .lineSpacing(4)
                         }
                     }
                 }
@@ -1351,15 +1354,15 @@ private struct InvestmentThesisView: View {
     let compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 16) {
+        VStack(alignment: .leading, spacing: compact ? 14 : 20) {
             HStack(spacing: 8) {
                 Text("核心 THESIS")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: compact ? 11 : 12, weight: .bold))
                     .tracking(0.8)
                     .foregroundStyle(ReaderTheme.accent)
                 if let horizon = thesis.horizon, !horizon.isEmpty {
                     Text(horizon)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: compact ? 11 : 12, weight: .semibold))
                         .foregroundStyle(ReaderTheme.muted)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -1369,16 +1372,16 @@ private struct InvestmentThesisView: View {
             }
 
             Text(thesis.thesis)
-                .font(.chineseEditorial(compact ? 17 : 22, weight: .semibold))
+                .font(.chineseEditorial(compact ? 20 : 24, weight: .semibold))
                 .foregroundStyle(ReaderTheme.ink)
-                .lineSpacing(compact ? 4 : 6)
+                .lineSpacing(compact ? 6 : 8)
                 .multilineTextAlignment(.leading)
 
             if !thesis.tickers.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(thesis.tickers, id: \.self) { ticker in
                         Text(ticker)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: compact ? 11 : 12, weight: .bold, design: .monospaced))
                             .foregroundStyle(ReaderTheme.accent)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
@@ -1413,7 +1416,7 @@ private struct InvestmentThesisView: View {
                 }
             }
         }
-        .padding(compact ? 14 : 18)
+        .padding(compact ? 18 : 22)
         .background(ReaderTheme.queue.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
@@ -1422,20 +1425,20 @@ private struct InvestmentThesisView: View {
     }
 
     private func thesisList(_ title: String, items: [String], symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: compact ? 12 : 13, weight: .semibold))
                 .foregroundStyle(ReaderTheme.muted)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: symbol)
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: compact ? 9 : 10, weight: .bold))
                         .foregroundStyle(ReaderTheme.accent)
-                        .padding(.top, 3)
+                        .padding(.top, 4)
                     Text(item)
-                        .font(.system(size: compact ? 11 : 12))
+                        .font(.system(size: compact ? 14 : 15))
                         .foregroundStyle(ReaderTheme.ink)
-                        .lineSpacing(3)
+                        .lineSpacing(compact ? 5 : 6)
                         .multilineTextAlignment(.leading)
                 }
             }
