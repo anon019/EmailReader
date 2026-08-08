@@ -137,8 +137,20 @@ struct EmailReaderSmokeTests {
             throw SmokeFailure("completed attention item returned to the daily brief")
         }
         try database.saveDailyBrief(brief, provider: "test")
+        let stagedBrief = DailyBrief(
+            date: brief.date,
+            generatedAt: brief.generatedAt,
+            periodLabel: brief.periodLabel,
+            headline: "尚未发布的本机暂存简报",
+            overview: brief.overview,
+            total: brief.total,
+            priority: brief.priority,
+            noteworthy: brief.noteworthy,
+            later: brief.later,
+            lowPriorityCount: brief.lowPriorityCount
+        )
         let compactURL = directory.appendingPathComponent("compact-input.json")
-        try database.exportCompactBriefInput(to: compactURL)
+        try database.exportCompactBriefInput(to: compactURL, brief: stagedBrief)
         let compact = try JSONDecoder().decode(
             CompactBriefInputEnvelope.self,
             from: Data(contentsOf: compactURL)
@@ -148,6 +160,9 @@ struct EmailReaderSmokeTests {
               !compactText.contains("bodyPlain"),
               compactText.contains("investmentThesis") else {
             throw SmokeFailure("compact Luna input was incomplete or included raw bodies")
+        }
+        guard try database.loadDailyBrief().headline == brief.headline else {
+            throw SmokeFailure("staged local analysis overwrote the active final brief")
         }
 
         let thesisCloudItem = DailyBriefItem(

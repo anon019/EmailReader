@@ -260,7 +260,7 @@ public final class LocalBriefEngine: Sendable {
         self.summarizer = OllamaMailSummarizer(model: model)
     }
 
-    public func generate(now: Date = .now) async throws -> LocalBriefGenerationResult {
+    public func generate(now: Date = .now, publish: Bool = true) async throws -> LocalBriefGenerationResult {
         let calendar = Calendar.current
         let defaultCutoff = calendar.date(byAdding: .hour, value: -24, to: now) ?? .distantPast
         let contextCutoff = calendar.date(byAdding: .day, value: -7, to: now) ?? .distantPast
@@ -346,7 +346,9 @@ public final class LocalBriefEngine: Sendable {
             now: now,
             windowStart: recentCutoff
         )
-        try database.saveDailyBrief(brief, provider: "ollama:\(model)")
+        if publish {
+            try database.saveDailyBrief(brief, provider: "ollama:\(model)")
+        }
         try database.recordRun(
             trigger: "ollama_local_brief",
             status: failed == 0 ? "complete" : "partial",

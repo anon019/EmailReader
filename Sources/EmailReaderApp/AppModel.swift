@@ -10,6 +10,12 @@ enum SidebarSelection: Hashable {
     case category(MailCategory)
 }
 
+struct DailyCategoryCount: Identifiable {
+    let category: MailCategory
+    let count: Int
+    var id: String { category.id }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var selection: SidebarSelection = .library(.today)
@@ -31,6 +37,9 @@ final class AppModel: ObservableObject {
     @Published var isAuthorizing = false
     @Published var briefThreadStates: [String: ReadingState] = [:]
     @Published var briefProviderLabel = "本地整理"
+    @Published var dailyUnreadThreads: [MailThread] = []
+    @Published var dailyAlertThreads: [MailThread] = []
+    @Published var dailyCategoryCounts: [DailyCategoryCount] = []
 
     let database: EmailReaderDatabase
     private var briefMonitor: AnyCancellable?
@@ -92,6 +101,18 @@ final class AppModel: ObservableObject {
             briefProviderLabel = Self.providerLabel(try database.setting("last_brief_provider"))
             receipt = try database.loadLatestReceipt()
             threads = try database.loadThreads(filter: filter, category: category, search: searchText)
+            let allThreads = try database.loadThreads(filter: .all)
+            let dailyCutoff = Calendar.current.date(byAdding: .hour, value: -24, to: .now) ?? .distantPast
+            let contextCutoff = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .distantPast
+            let dailyThreads = allThreads.filter { !$0.isDemo && $0.receivedAt >= dailyCutoff }
+            dailyUnreadThreads = dailyThreads.filter { $0.readingState == .unread }
+            dailyAlertThreads = allThreads.filter {
+                !$0.isDemo && $0.needsAttention && $0.readingState != .completed && $0.receivedAt >= contextCutoff
+            }
+            dailyCategoryCounts = MailCategory.allCases.compactMap { category in
+                let count = dailyThreads.lazy.filter { $0.category == category }.count
+                return count > 0 ? DailyCategoryCount(category: category, count: count) : nil
+            }
             let briefIDs = brief.priority.map(\.threadID) + brief.noteworthy.map(\.threadID) + brief.later.map(\.threadID)
             briefThreadStates = Dictionary(uniqueKeysWithValues: try briefIDs.compactMap { id in
                 try database.loadThread(id: id).map { (id, $0.readingState) }
@@ -180,15 +201,32 @@ final class AppModel: ObservableObject {
             do {
                 if account?.authState == "connected" {
                     try await WorkerSyncRunner.sync(database: database, trigger: "manual")
-                    syncPhase = "正在本机提炼与重新排序"
-                    _ = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate()
+                    let temporaryDirectory = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("EmailReader-Luna-\(UUID().uuidString)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+                    let analysisInputURL = temporaryDirectory.appendingPathComponent("analysis-input.json")
+                    let outputURL = temporaryDirectory.appendingPathComponent("luna-pipeline.json")
+                    let inputCount = try database.exportDailyLunaInput(to: analysisInputURL)
+
+                    syncPhase = "Luna Medium 正在逐封分析并整理"
+                    try await LunaBriefRunner.run(analysisInputURL: analysisInputURL, outputURL: outputURL)
+                    let analyzedCount = try database.installLunaPipeline(from: outputURL)
+                    try database.recordRun(
+                        trigger: "manual_luna",
+                        status: "complete",
+                        discovered: inputCount,
+                        analyzed: analyzedCount,
+                        failed: 0,
+                        detail: "Luna Medium 已完成逐封分类、摘要、投资 thesis 与每日简报。"
+                    )
                 } else {
                     try await Task.sleep(for: .milliseconds(750))
                     try database.recordRun(trigger: "manual", status: "waiting_auth", discovered: 0, analyzed: 0, failed: 0, detail: "尚未连接 Gmail。")
                 }
                 reload()
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = "更新未完成，已保留上一份有效简报。\n\n\(error.localizedDescription)"
                 _ = try? database.recordRun(trigger: "manual", status: "failed", discovered: 0, analyzed: 0, failed: 1, detail: error.localizedDescription)
                 reload()
             }

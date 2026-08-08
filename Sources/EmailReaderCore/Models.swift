@@ -350,6 +350,75 @@ public struct BriefInputEnvelope: Codable, Sendable {
     public let mails: [BriefInputMail]
 }
 
+public struct LunaMailAnalysis: Codable, Sendable {
+    public let id: String
+    public let category: MailCategory
+    public let summary: String
+    public let investmentThesis: InvestmentThesis?
+    public let whyImportant: String
+    public let actionItems: [String]
+    public let deadline: String?
+    public let importance: Int
+    public let needsAttention: Bool
+    public let confidence: Double
+
+    public init(
+        id: String,
+        category: MailCategory,
+        summary: String,
+        investmentThesis: InvestmentThesis?,
+        whyImportant: String,
+        actionItems: [String],
+        deadline: String?,
+        importance: Int,
+        needsAttention: Bool,
+        confidence: Double
+    ) {
+        self.id = id
+        self.category = category
+        self.summary = summary
+        self.investmentThesis = investmentThesis
+        self.whyImportant = whyImportant
+        self.actionItems = actionItems
+        self.deadline = deadline
+        self.importance = importance
+        self.needsAttention = needsAttention
+        self.confidence = confidence
+    }
+
+    public var result: MailAnalysisResult {
+        let normalizedImportance = importance <= 5 ? importance * 20 : importance
+        let alertCategoryIsAllowed: Bool
+        switch category {
+        case .action, .security, .finance, .project, .personal:
+            alertCategoryIsAllowed = true
+        case .investment, .reading, .notification:
+            alertCategoryIsAllowed = false
+        }
+        return MailAnalysisResult(
+            category: category,
+            summary: summary,
+            investmentThesis: investmentThesis,
+            whyImportant: whyImportant,
+            actionItems: actionItems,
+            deadline: deadline,
+            importance: normalizedImportance,
+            needsAttention: needsAttention && alertCategoryIsAllowed,
+            confidence: confidence
+        )
+    }
+}
+
+public struct LunaDailyPipeline: Codable, Sendable {
+    public let analyses: [LunaMailAnalysis]
+    public let brief: DailyBrief
+
+    public init(analyses: [LunaMailAnalysis], brief: DailyBrief) {
+        self.analyses = analyses
+        self.brief = brief
+    }
+}
+
 public struct CompactBriefInputMail: Codable, Sendable {
     public let id: String
     public let sender: String

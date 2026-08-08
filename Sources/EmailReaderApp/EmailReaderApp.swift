@@ -27,7 +27,27 @@ private enum CodexBriefCommandRunner {
         let database = EmailReaderDatabase.shared
         do {
             try database.bootstrap(seedDemo: false)
-            if let path = value(after: "--codex-authorize", in: arguments) {
+            if arguments.contains("--codex-run-luna") {
+                guard try database.loadAccount()?.authState == "connected" else {
+                    throw CodexCommandError("Gmail 尚未授权，无法运行 Luna 每日分析。")
+                }
+                try await WorkerSyncRunner.sync(database: database, trigger: "cli_luna")
+                let temporaryDirectory = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("EmailReader-Luna-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+                let inputURL = temporaryDirectory.appendingPathComponent("analysis-input.json")
+                let outputURL = temporaryDirectory.appendingPathComponent("luna-pipeline.json")
+                let inputCount = try database.exportDailyLunaInput(to: inputURL)
+                try await LunaBriefRunner.run(analysisInputURL: inputURL, outputURL: outputURL)
+                let analyzedCount = try database.installLunaPipeline(from: outputURL)
+                try database.recordRun(
+                    trigger: "cli_luna", status: "complete", discovered: inputCount,
+                    analyzed: analyzedCount, failed: 0,
+                    detail: "Luna Medium 已完成逐封分类、摘要、投资 thesis 与每日简报。"
+                )
+                write("Luna 每日分析完成：\(analyzedCount)/\(inputCount) 封。\n")
+            } else if let path = value(after: "--codex-authorize", in: arguments) {
                 try database.setAccountAuthState("authorizing")
                 try await GoogleOAuthCoordinator().authorize(
                     configurationURL: URL(fileURLWithPath: path),
@@ -54,9 +74,16 @@ private enum CodexBriefCommandRunner {
                 if try database.setting("analysis_rules_version") != "2" {
                     _ = try await GmailSyncEngine(database: database).reanalyzeStoredThreads()
                 }
-                _ = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate()
-                try database.exportCompactBriefInput(to: URL(fileURLWithPath: path))
+                let localResult = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate(publish: false)
+                try database.exportCompactBriefInput(to: URL(fileURLWithPath: path), brief: localResult.brief)
                 write("已完成本机筛选，并导出不含正文的 Luna 紧凑输入：\(path)\n")
+            } else if let path = value(after: "--codex-prepare-luna", in: arguments) {
+                guard try database.loadAccount()?.authState == "connected" else {
+                    throw CodexCommandError("Gmail 尚未授权，无法准备 Luna 每日分析。")
+                }
+                try await WorkerSyncRunner.sync(database: database, trigger: "luna_daily_sync")
+                let count = try database.exportDailyLunaInput(to: URL(fileURLWithPath: path))
+                write("已同步 Gmail，并导出 \(count) 封待 Luna 逐封分析的邮件：\(path)\n")
             } else if let path = value(after: "--codex-export-compact-only", in: arguments) {
                 try database.exportCompactBriefInput(to: URL(fileURLWithPath: path))
                 write("已导出当前简报的不含正文紧凑输入：\(path)\n")
@@ -80,6 +107,10 @@ private enum CodexBriefCommandRunner {
                 try database.installDailyBrief(from: URL(fileURLWithPath: path))
                 let brief = try database.loadDailyBrief()
                 write("已安装每日简报：\(brief.headline)\n")
+            } else if let path = value(after: "--codex-install-luna-pipeline", in: arguments) {
+                let count = try database.installLunaPipeline(from: URL(fileURLWithPath: path))
+                let brief = try database.loadDailyBrief()
+                write("已安装 Luna 逐封分析 \(count) 封及每日简报：\(brief.headline)\n")
             } else if arguments.contains("--codex-print-brief") {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

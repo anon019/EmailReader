@@ -10,14 +10,16 @@ Email Reader is a local-first macOS email intelligence desk for Gmail. It turns 
 - First import is limited to the last 7 days of inbox mail; later runs use Gmail history for incremental changes.
 - OAuth tokens stored in macOS Keychain.
 - Initial 7-day Gmail import and subsequent `historyId` incremental sync.
-- Deterministic rules classify every message and preserve risk alerts. Ollama `qwen3.5:4b` deeply summarizes only briefing candidates that are new or changed.
+- Deterministic rules provide an immediate safe classification after sync; Luna Medium then directly analyzes every selected daily email and publishes the authoritative classification and summary.
 - Long mail is summarized in selected sections and consolidated into one fact-focused result. Summary fingerprints avoid reprocessing unchanged bodies.
-- Investment Substack mail has a dedicated local research pass: core Thesis, supporting evidence, catalysts, disconfirming risks, explicit tickers, and time horizon are stored as structured data instead of flattened into a generic summary.
-- Optional Luna Medium output can be installed as a globally edited briefing; the UI records and displays the provider that actually generated the current brief.
+- Investment Substack mail has a dedicated Luna research pass: core Thesis, supporting evidence, catalysts, disconfirming risks, explicit tickers, and time horizon are stored as structured data instead of flattened into a generic summary.
+- Luna Medium produces the globally edited final briefing; the UI records and displays the provider that actually generated the current brief.
+- Scheduled and manual refreshes both ask Luna Medium to analyze the daily source text and publish only a validated pipeline result. A failed Luna run preserves the previous final brief instead of silently downgrading the UI.
 - System-detected risks and user-followed mail are stored separately, so reanalysis cannot erase a user decision or hide a security alert.
 - Every successful briefing is archived locally for daily history review.
 - Local unread, read-later, attention, and completed states.
-- A Codex automation runs at 07:30. Local rules and Ollama read the mail; Luna Medium receives only selected compact summaries for final cross-mail editing. The app does not register a macOS background item.
+- A Codex automation runs at 07:30. Luna Medium performs the daily analysis without requiring the app to stay open. The app does not register a macOS background item.
+- Ollama `qwen3.5:4b` remains available only as an explicitly invoked offline fallback; it is not used by scheduled or manual production refreshes.
 - Remote message images are not rendered in version one.
 
 ## Build and install
@@ -42,7 +44,7 @@ The app requests only profile identity plus `gmail.readonly`.
 - Gmail access is read-only. The app cannot send, delete, archive, label, or mark Gmail messages as read.
 - Remote images and tracking pixels are not rendered.
 - Email content is treated as untrusted input. Local and optional cloud prompts explicitly reject instructions embedded in mail.
-- The daily scheduled path never sends raw bodies to Luna. Only selected local summaries, structured investment Thesis fields, subjects, sender labels, categories, scores, and actions are included in the compact envelope.
+- The daily and manual Luna path sends the selected 24-hour email text to the user's authenticated Codex task so Luna can produce primary-source summaries. The app clips long bodies, treats email as untrusted input, and retains all mailbox data locally outside that analysis request.
 
 ## Data locations
 

@@ -71,7 +71,7 @@ private struct SidebarView: View {
                         SidebarButton(
                             title: filter.rawValue,
                             symbol: filter.symbol,
-                            count: filter == .all ? model.counts[filter] : nil,
+                            count: model.counts[filter],
                             selected: model.selection == .library(filter)
                         ) { model.changeSelection(.library(filter)) }
                     }
@@ -199,7 +199,7 @@ private struct ThreadQueueView: View {
             }
             .buttonStyle(.plain)
             .disabled(model.isSyncing)
-            .help("读取增量并在本机重新整理")
+            .help("读取 Gmail 增量，并由 Luna Medium 直接分析正文和生成简报")
         }
         .padding(.horizontal, 18)
         .padding(.top, 20)
@@ -411,6 +411,9 @@ private struct ThreadRow: View {
             HStack(spacing: 8) {
                 if thread.readingState == .unread {
                     Circle().fill(ReaderTheme.accent).frame(width: 6, height: 6)
+                    Text("未读")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(ReaderTheme.accent)
                 }
                 Text(thread.senderName.isEmpty ? thread.senderEmail : thread.senderName)
                     .font(.system(size: 12, weight: thread.readingState == .unread ? .semibold : .medium))
@@ -472,13 +475,13 @@ private struct DailyBriefReaderView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(ReaderTheme.muted)
                 Button { model.syncNow() } label: {
-                    Label(model.isSyncing ? model.syncPhase : "更新并重新整理", systemImage: "arrow.clockwise")
+                    Label(model.isSyncing ? model.syncPhase : "更新并生成 Luna 简报", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(ReaderTheme.accent)
                 .disabled(model.isSyncing)
-                .help("读取 Gmail 增量，并在本机重新生成完整简报")
+                .help("读取 Gmail 增量，由 Luna Medium 直接完成逐封分类、摘要、投资 thesis 和每日简报")
             }
             .padding(.horizontal, 20)
             .frame(height: 48)
@@ -511,8 +514,9 @@ private struct DailyBriefReaderView: View {
                         .padding(.top, 12)
 
                     HStack(spacing: 0) {
-                        briefStat(model.brief.priority.count + model.brief.noteworthy.count, "需要知道")
-                        briefStat(model.brief.later.count, "集中阅读")
+                        briefStat(model.dailyAlertThreads.count, "待巡检警报")
+                        briefStat(model.dailyUnreadThreads.count, "今日未读")
+                        briefStat(model.dailyCategoryCounts.count, "涉及类别")
                         briefStat(model.brief.lowPriorityCount, "已替你过滤")
                     }
                     .padding(.vertical, 24)
@@ -520,24 +524,26 @@ private struct DailyBriefReaderView: View {
                     .overlay(alignment: .bottom) { Divider().overlay(ReaderTheme.divider) }
                     .padding(.top, 28)
 
-                    if model.brief.priority.isEmpty {
+                    if model.dailyAlertThreads.isEmpty {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 20))
                                 .foregroundStyle(ReaderTheme.positive)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("没有必须立即处理的事项")
+                                Text("今日警报巡检：已清零")
                                     .font(.system(size: 14, weight: .semibold))
-                                Text("可以直接从“值得关注”开始阅读。")
+                                Text("没有尚未核实的安全、付款、截止日期或必须回复事项。")
                                     .font(.system(size: 12))
                                     .foregroundStyle(ReaderTheme.muted)
                             }
                         }
                         .padding(.vertical, 28)
                     } else {
-                        briefSection("优先处理", subtitle: "需要确认、回复或核对", items: model.brief.priority, accent: true)
+                        dailyAlertReview
                     }
 
+                    dailyCategoryOverview
+                    dailyUnreadReview
                     briefSection("值得关注", subtitle: "已经从资讯流中筛出的关键信号", items: model.brief.noteworthy, accent: false)
                     briefSection("稍后阅读", subtitle: "有价值但没有时间压力", items: model.brief.later, accent: false)
 
@@ -570,6 +576,123 @@ private struct DailyBriefReaderView: View {
                 .foregroundStyle(ReaderTheme.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var dailyAlertReview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("今日警报巡检", systemImage: "exclamationmark.triangle.fill")
+                    .font(.editorial(22, weight: .semibold))
+                    .foregroundStyle(ReaderTheme.accent)
+                Text("逐项核实后清零；未处理项目会延续到下一份简报")
+                    .font(.system(size: 11))
+                    .foregroundStyle(ReaderTheme.faint)
+            }
+            .padding(.bottom, 10)
+
+            ForEach(model.dailyAlertThreads) { thread in
+                auditRow(thread, showsAlert: true)
+            }
+        }
+        .padding(.bottom, 30)
+    }
+
+    private var dailyCategoryOverview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("今日分类概况")
+                .font(.editorial(22, weight: .semibold))
+                .foregroundStyle(ReaderTheme.ink)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(model.dailyCategoryCounts) { entry in
+                    Label("\(entry.category.rawValue) \(entry.count)", systemImage: entry.category.symbol)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ReaderTheme.muted)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(ReaderTheme.selected, in: Capsule())
+                }
+            }
+        }
+        .padding(.bottom, 30)
+    }
+
+    private var dailyUnreadReview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("今日未读清单")
+                    .font(.editorial(22, weight: .semibold))
+                    .foregroundStyle(ReaderTheme.ink)
+                Text("最近 24 小时每一封尚未打开的邮件；已标明类别与关注状态")
+                    .font(.system(size: 11))
+                    .foregroundStyle(ReaderTheme.faint)
+            }
+            .padding(.bottom, 10)
+
+            if model.dailyUnreadThreads.isEmpty {
+                Label("今日邮件已全部过目", systemImage: "checkmark.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ReaderTheme.positive)
+                    .padding(.vertical, 14)
+            } else {
+                ForEach(model.dailyUnreadThreads) { thread in
+                    auditRow(thread, showsAlert: false)
+                }
+            }
+        }
+        .padding(.bottom, 30)
+    }
+
+    private func auditRow(_ thread: MailThread, showsAlert: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { model.selectThread(thread.id) } label: {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(thread.readingState == .unread ? ReaderTheme.accent : ReaderTheme.faint)
+                            .frame(width: 6, height: 6)
+                        Text(thread.readingState == .unread ? "未读" : "已读")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(thread.readingState == .unread ? ReaderTheme.accent : ReaderTheme.faint)
+                        Text(thread.senderName.isEmpty ? thread.senderEmail : thread.senderName)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(ReaderTheme.muted)
+                        Spacer()
+                        Label(thread.category.rawValue, systemImage: thread.category.symbol)
+                            .font(.system(size: 10))
+                            .foregroundStyle(ReaderTheme.faint)
+                    }
+                    Text(thread.subject)
+                        .font(.chineseEditorial(17, weight: .semibold))
+                        .foregroundStyle(ReaderTheme.ink)
+                        .multilineTextAlignment(.leading)
+                    if let thesis = thread.investmentThesis {
+                        InvestmentThesisView(thesis: thesis, compact: true)
+                    } else {
+                        Text(thread.summary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(ReaderTheme.muted)
+                            .lineSpacing(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showsAlert {
+                HStack {
+                    Button("已核实并处理") { model.setState(.completed, threadID: thread.id) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(ReaderTheme.accent)
+                    Button("稍后提醒") { model.setState(.later, threadID: thread.id) }
+                        .buttonStyle(.bordered)
+                    Spacer()
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 14)
+        .overlay(alignment: .bottom) { Divider().overlay(ReaderTheme.divider) }
     }
 
     @ViewBuilder

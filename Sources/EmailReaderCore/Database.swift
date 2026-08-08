@@ -38,6 +38,12 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             if !threadColumns.contains("investment_thesis_json") {
                 try execute(db, sql: "ALTER TABLE threads ADD COLUMN investment_thesis_json TEXT NOT NULL DEFAULT ''")
             }
+            let alertPolicyVersion = try rows(db, sql: "SELECT value FROM settings WHERE key='alert_policy_version'").first?.string("value")
+            if alertPolicyVersion != "3" {
+                try execute(db, sql: "UPDATE threads SET needs_attention=0 WHERE category IN ('投资研究','资讯与阅读','一般通知')")
+                try execute(db, sql: "UPDATE threads SET importance=importance*20 WHERE importance BETWEEN 1 AND 5 AND is_demo=0")
+                try execute(db, sql: "INSERT INTO settings(key,value) VALUES('alert_policy_version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            }
             let now = Self.isoDate(.now)
             try execute(db, sql: "INSERT OR IGNORE INTO accounts(id,email,provider,display_name,auth_state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", values: ["gmail-primary", "", "gmail", "", "disconnected", now, now])
             try execute(db, sql: "INSERT OR IGNORE INTO settings(key,value) VALUES('schedule_time','07:30'),('analysis_provider','codex_daily_brief'),('initial_lookback_days','7'),('block_remote_images','1')")
@@ -46,6 +52,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
                 if existing == 0 { try seedDemoData(db) }
             }
         }
+        try enforceActiveBriefAlertPolicy()
     }
 
     public func loadAccount() throws -> MailAccount? {
@@ -74,7 +81,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             case .later:
                 clauses.append("reading_state = 'later'")
             case .attention:
-                clauses.append("(needs_attention = 1 OR user_attention = 1)")
+                clauses.append("(needs_attention = 1 OR user_attention = 1) AND reading_state != 'completed'")
             case .completed:
                 clauses.append("reading_state = 'completed'")
             case .history:
@@ -109,7 +116,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             counts.today = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE date(received_at, 'localtime') = date('now', 'localtime')")
             counts.unread = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE reading_state='unread'")
             counts.later = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE reading_state='later'")
-            counts.attention = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE needs_attention=1 OR user_attention=1")
+            counts.attention = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE (needs_attention=1 OR user_attention=1) AND reading_state!='completed'")
             counts.completed = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads WHERE reading_state='completed'")
             counts.all = try scalarInt(db, sql: "SELECT COUNT(*) FROM threads")
             return counts
@@ -122,6 +129,37 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             return brief
         }
         return DailyBriefBuilder.build(from: try loadThreads(filter: .all))
+    }
+
+    private func enforceActiveBriefAlertPolicy() throws {
+        guard let data = try? Data(contentsOf: dailyBriefURL),
+              let existing = try? JSONDecoder().decode(DailyBrief.self, from: data) else { return }
+        let threadByID = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
+        let validPriority = existing.priority.filter { item in
+            guard let thread = threadByID[item.threadID] else { return false }
+            return thread.needsAttention || thread.category == .security ||
+                (thread.category == .action && !thread.actionItems.isEmpty)
+        }
+        guard validPriority.count != existing.priority.count else { return }
+        let suffix = existing.headline.split(separator: "；", maxSplits: 1).dropFirst().first.map(String.init)
+        let headline = validPriority.isEmpty
+            ? (suffix ?? "今天没有需要立即处理的警报")
+            : "\(validPriority.count) 项警报需要核实；\(suffix ?? "其余研究信号见下文")"
+        let repaired = DailyBrief(
+            date: existing.date,
+            generatedAt: existing.generatedAt,
+            periodLabel: existing.periodLabel,
+            headline: headline,
+            overview: "今日共处理 \(existing.total) 封邮件；\(validPriority.count) 项符合安全、付款、必须回复或时间敏感条件。普通资讯、投资观点和营销活动不会升级为警报。",
+            total: existing.total,
+            priority: validPriority,
+            noteworthy: existing.noteworthy,
+            later: existing.later,
+            lowPriorityCount: existing.lowPriorityCount + (existing.priority.count - validPriority.count)
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(repaired).write(to: dailyBriefURL, options: .atomic)
     }
 
     public func loadBriefHistory(limit: Int = 30) throws -> [DailyBrief] {
@@ -168,8 +206,43 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         try encoder.encode(envelope).write(to: destination, options: .atomic)
     }
 
+    public func exportDailyLunaInput(to destination: URL, now: Date = .now) throws -> Int {
+        let dailyCutoff = Calendar.current.date(byAdding: .hour, value: -24, to: now) ?? .distantPast
+        let contextCutoff = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? .distantPast
+        let selected = try loadThreads(filter: .all).filter { thread in
+            guard !thread.isDemo else { return false }
+            return thread.receivedAt >= dailyCutoff ||
+                (thread.needsAttention && thread.readingState != .completed && thread.receivedAt >= contextCutoff)
+        }
+        let mails = selected.map {
+            BriefInputMail(
+                id: $0.id,
+                senderName: $0.senderName,
+                senderEmail: $0.senderEmail,
+                subject: $0.subject,
+                receivedAt: Self.isoDate($0.receivedAt),
+                snippet: String($0.snippet.prefix(800)),
+                bodyPlain: String($0.bodyPlain.prefix(9_000)),
+                hasAttachments: $0.hasAttachments
+            )
+        }
+        let envelope = BriefInputEnvelope(
+            generatedAt: Self.isoDate(now),
+            scope: "最近 24 小时全部邮件；另包含过去 7 天仍未处理的系统关注项。必须逐封分析，不得遗漏任何输入 ID。",
+            mails: mails
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(envelope).write(to: destination, options: .atomic)
+        return mails.count
+    }
+
     public func exportCompactBriefInput(to destination: URL) throws {
-        let brief = try loadDailyBrief()
+        try exportCompactBriefInput(to: destination, brief: loadDailyBrief())
+    }
+
+    public func exportCompactBriefInput(to destination: URL, brief: DailyBrief) throws {
         let selectedIDs = brief.priority.map(\.threadID) + brief.noteworthy.map(\.threadID) + brief.later.map(\.threadID)
         let threadByID = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
         let mails = selectedIDs.compactMap { id -> CompactBriefInputMail? in
@@ -204,7 +277,33 @@ public final class EmailReaderDatabase: @unchecked Sendable {
     public func installDailyBrief(from source: URL) throws {
         let sourceData = try Data(contentsOf: source)
         let decoded = try JSONDecoder().decode(DailyBrief.self, from: sourceData)
+        let rawItems = decoded.priority + decoded.noteworthy + decoded.later
+        let rawThreadIDs = rawItems.map(\.threadID)
+        let rawItemIDs = rawItems.map(\.id)
+        guard Set(rawThreadIDs).count == rawThreadIDs.count,
+              Set(rawItemIDs).count == rawItemIDs.count else {
+            throw EmailReaderDatabaseError.step("简报包含重复邮件映射，未安装。")
+        }
         let threadByID = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
+        var seenThreadIDs = Set<String>()
+        func uniqueItems(_ source: [DailyBriefItem], allowsAction: Bool, limit: Int? = nil) -> [DailyBriefItem] {
+            var result: [DailyBriefItem] = []
+            for item in source {
+                guard threadByID[item.threadID] != nil,
+                      seenThreadIDs.insert(item.threadID).inserted else { continue }
+                result.append(Self.normalizedBriefItem(
+                    item,
+                    allowsAction: allowsAction,
+                    investmentThesis: threadByID[item.threadID]?.investmentThesis
+                ))
+                if let limit, result.count >= limit { break }
+            }
+            return result
+        }
+        let priority = uniqueItems(decoded.priority, allowsAction: true)
+        let noteworthy = uniqueItems(decoded.noteworthy, allowsAction: false, limit: 5)
+        let later = uniqueItems(decoded.later, allowsAction: false, limit: 5)
+        let calculatedLowPriorityCount = max(0, decoded.total - priority.count - noteworthy.count - later.count)
         let brief = DailyBrief(
             date: decoded.date,
             generatedAt: decoded.generatedAt,
@@ -212,10 +311,10 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             headline: decoded.headline,
             overview: decoded.overview,
             total: decoded.total,
-            priority: decoded.priority.map { Self.normalizedBriefItem($0, allowsAction: true, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
-            noteworthy: decoded.noteworthy.map { Self.normalizedBriefItem($0, allowsAction: false, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
-            later: decoded.later.map { Self.normalizedBriefItem($0, allowsAction: false, investmentThesis: threadByID[$0.threadID]?.investmentThesis) },
-            lowPriorityCount: decoded.lowPriorityCount
+            priority: priority,
+            noteworthy: noteworthy,
+            later: later,
+            lowPriorityCount: max(decoded.lowPriorityCount, calculatedLowPriorityCount)
         )
         let knownIDs = Set(try loadThreads(filter: .all).map(\.id))
         let items = brief.priority + brief.noteworthy + brief.later
@@ -231,9 +330,6 @@ public final class EmailReaderDatabase: @unchecked Sendable {
               !brief.headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               brief.total >= 0,
               brief.lowPriorityCount >= 0,
-              brief.priority.count <= 8,
-              brief.noteworthy.count <= 5,
-              brief.later.count <= 5,
               prioritySemanticsAreValid,
               Set(referencedIDs).count == referencedIDs.count,
               Set(itemIDs).count == itemIDs.count else {
@@ -251,6 +347,54 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         try setSetting("last_codex_brief_at", value: Self.isoDate(.now))
         try setSetting("last_brief_provider", value: "codex:gpt-5.6-luna-medium")
         try setSetting("last_brief_at", value: Self.isoDate(.now))
+    }
+
+    public func installLunaPipeline(from source: URL) throws -> Int {
+        let data = try Data(contentsOf: source)
+        let pipeline = try JSONDecoder().decode(LunaDailyPipeline.self, from: data)
+        let knownIDs = Set(try loadThreads(filter: .all).map(\.id))
+        let analysisIDs = pipeline.analyses.map(\.id)
+        guard !pipeline.analyses.isEmpty,
+              pipeline.analyses.count >= pipeline.brief.total,
+              Set(analysisIDs).count == analysisIDs.count,
+              analysisIDs.allSatisfy(knownIDs.contains),
+              pipeline.analyses.allSatisfy({
+                  !$0.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                  !$0.whyImportant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                  (0...100).contains($0.importance) &&
+                  (0...1).contains($0.confidence)
+              }) else {
+            throw EmailReaderDatabaseError.step("Luna 逐封分析不完整或引用了未知邮件，未安装。")
+        }
+
+        for analysis in pipeline.analyses {
+            try updateAnalysis(threadID: analysis.id, result: analysis.result)
+        }
+
+        let refreshedThreads = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
+        let validPriority = pipeline.brief.priority.filter { item in
+            guard let thread = refreshedThreads[item.threadID] else { return false }
+            return thread.needsAttention || thread.category == .security ||
+                (thread.category == .action && !thread.actionItems.isEmpty)
+        }
+        let sanitizedBrief = DailyBrief(
+            date: pipeline.brief.date,
+            generatedAt: pipeline.brief.generatedAt,
+            periodLabel: pipeline.brief.periodLabel,
+            headline: pipeline.brief.headline,
+            overview: pipeline.brief.overview,
+            total: pipeline.brief.total,
+            priority: validPriority,
+            noteworthy: pipeline.brief.noteworthy,
+            later: pipeline.brief.later,
+            lowPriorityCount: pipeline.brief.lowPriorityCount + (pipeline.brief.priority.count - validPriority.count)
+        )
+        let briefURL = source.deletingLastPathComponent().appendingPathComponent("validated-daily-brief.json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(sanitizedBrief).write(to: briefURL, options: .atomic)
+        try installDailyBrief(from: briefURL)
+        return pipeline.analyses.count
     }
 
     public func saveDailyBrief(_ brief: DailyBrief, provider: String) throws {

@@ -54,9 +54,9 @@ struct SettingsView: View {
                             Image(systemName: "sparkles")
                                 .foregroundStyle(ReaderTheme.accent)
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("由 Codex 定时触发，本机 Ollama 生成简报")
+                                Text("由 Codex 定时触发，Luna Medium 生成最终简报")
                                     .font(.system(size: 13, weight: .semibold))
-                                Text("每天 07:30 触发一次；程序先分类、筛选风险与简报候选，再由本机 qwen3.5:4b 深读新增或变化邮件。长邮件分段提炼，未变化内容直接复用缓存。Email Reader 不注册 macOS 后台项目。")
+                                Text("每天 07:30 触发一次；Luna Medium 直接分析最近 24 小时邮件正文，逐封生成分类、摘要、关注判断和投资 Thesis，再完成跨邮件排序与最终简报。Email Reader 不注册 macOS 后台项目。")
                                     .font(.system(size: 11))
                                     .foregroundStyle(ReaderTheme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -72,7 +72,7 @@ struct SettingsView: View {
                             Spacer()
                             Button("重新检查") { model.checkAnalysisAvailability() }
                         }
-                        Text("每日默认使用本机规则 + Ollama；Luna Medium 只在你明确运行云端增强时参与全局排序和编辑。简报右上角始终显示实际生成它的模型。Apple 端侧模型目前只做可用性检测，尚未接入生产管线。")
+                        Text("每日定时更新和右上角手动更新都使用 Luna Medium 直接完成逐封正文分析与最终简报。qwen3.5:4b 仍可作为显式离线备用，但不会参与或覆盖正式结果。若 Luna 失败，App 会保留上一份有效简报；右上角始终显示当前简报的实际生成模型。")
                             .font(.system(size: 11))
                             .foregroundStyle(ReaderTheme.faint)
                     }
