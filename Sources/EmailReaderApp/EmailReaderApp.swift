@@ -95,11 +95,11 @@ private enum CodexBriefCommandRunner {
                 if try database.setting("analysis_rules_version") != "2" {
                     _ = try await GmailSyncEngine(database: database).reanalyzeStoredThreads()
                 }
-                let result = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate()
-                write("本机简报完成：\(result.brief.headline)；成功 \(result.analyzed)，失败 \(result.failed)。\n")
+                let result = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate(publish: false)
+                write("本机离线预览完成（未覆盖正式 Luna 简报）：\(result.brief.headline)；成功 \(result.analyzed)，失败 \(result.failed)。\n")
             } else if arguments.contains("--codex-local-analyze-only") {
-                let result = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate()
-                write("本机分析完成：\(result.brief.headline)；处理 \(result.analyzed)，失败 \(result.failed)。\n")
+                let result = try await LocalBriefEngine(database: database, model: "qwen3.5:4b").generate(publish: false)
+                write("本机分析完成（未覆盖正式 Luna 简报）：\(result.brief.headline)；处理 \(result.analyzed)，失败 \(result.failed)。\n")
             } else if arguments.contains("--codex-reanalyze") {
                 let count = try await GmailSyncEngine(database: database).reanalyzeStoredThreads()
                 write("已重新整理 \(count) 封邮件。\n")
