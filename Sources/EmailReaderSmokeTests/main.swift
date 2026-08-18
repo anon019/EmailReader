@@ -92,6 +92,26 @@ struct EmailReaderSmokeTests {
             throw SmokeFailure("repeated Gmail headers were not normalized safely")
         }
 
+        let validOAuthURL = directory.appendingPathComponent("oauth-valid.json")
+        let validOAuth = #"{"installed":{"client_id":"fixture-client-id","client_secret":"fixture-only","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token"}}"#
+        try validOAuth.write(to: validOAuthURL, atomically: true, encoding: .utf8)
+        let loadedOAuth = try GoogleOAuthClient.load(from: validOAuthURL)
+        guard loadedOAuth.authorizationEndpoint == GoogleOAuthClient.canonicalAuthorizationEndpoint,
+              loadedOAuth.tokenEndpoint == GoogleOAuthClient.canonicalTokenEndpoint else {
+            throw SmokeFailure("official Google OAuth endpoints were not canonicalized")
+        }
+        let invalidOAuthURL = directory.appendingPathComponent("oauth-invalid.json")
+        let invalidOAuth = #"{"installed":{"client_id":"fixture-client-id","client_secret":"fixture-only","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://attacker.example/token"}}"#
+        try invalidOAuth.write(to: invalidOAuthURL, atomically: true, encoding: .utf8)
+        do {
+            _ = try GoogleOAuthClient.load(from: invalidOAuthURL)
+            throw SmokeFailure("an untrusted OAuth token endpoint was accepted")
+        } catch is SmokeFailure {
+            throw SmokeFailure("an untrusted OAuth token endpoint was accepted")
+        } catch {
+            // Expected configuration rejection.
+        }
+
         let analyzer = MailAnalyzer()
         let login = await analyzer.analyzeFallback(
             subject: "新设备登录提醒",
@@ -276,6 +296,69 @@ struct EmailReaderSmokeTests {
             throw SmokeFailure("non-priority cloud action was not sanitized")
         }
 
+        let lunaInputURL = directory.appendingPathComponent("analysis-input.json")
+        let lunaManifest = try database.exportDailyLunaInput(to: lunaInputURL)
+        guard lunaManifest.ids == ["demo-newsletter"] else {
+            throw SmokeFailure("Luna input manifest did not capture the exact exported IDs: \(lunaManifest.ids)")
+        }
+        let preFailureSummary = try database.loadThread(id: "demo-newsletter")?.summary
+        let preFailureHeadline = try database.loadDailyBrief().headline
+        let missingPipeline = LunaDailyPipeline(
+            analyses: [],
+            brief: DailyBrief(
+                date: "2026-08-07", generatedAt: ISO8601DateFormatter().string(from: .now),
+                periodLabel: "过去24小时", headline: "不完整结果", overview: "不应发布", total: 0,
+                priority: [], noteworthy: [], later: [], lowPriorityCount: 0
+            )
+        )
+        let missingPipelineURL = directory.appendingPathComponent("missing-luna-pipeline.json")
+        try JSONEncoder().encode(missingPipeline).write(to: missingPipelineURL)
+        do {
+            _ = try database.installLunaPipeline(from: missingPipelineURL, expectedInput: lunaManifest)
+            throw SmokeFailure("a Luna pipeline missing an exported ID was accepted")
+        } catch is SmokeFailure {
+            throw SmokeFailure("a Luna pipeline missing an exported ID was accepted")
+        } catch {
+            // Expected exact-manifest validation failure.
+        }
+        guard try database.loadThread(id: "demo-newsletter")?.summary == preFailureSummary,
+              try database.loadDailyBrief().headline == preFailureHeadline else {
+            throw SmokeFailure("failed Luna validation partially mutated analysis or active brief")
+        }
+
+        let atomicAnalysis = LunaMailAnalysis(
+            id: "demo-newsletter", category: .investment,
+            summary: "Luna 原子发布摘要",
+            investmentThesis: InvestmentThesis(
+                thesis: "作者认为决策型邮件界面将替代逐封处理。",
+                evidence: ["代理承担筛选"], catalysts: ["端侧模型普及"],
+                risks: ["分类错误"], tickers: ["AAPL"], horizon: "12 个月"
+            ),
+            whyImportant: "用于验证逐封分析与简报同时发布。", actionItems: [], deadline: nil,
+            importance: 82, needsAttention: false, confidence: 0.95
+        )
+        let atomicItem = DailyBriefItem(
+            id: "demo-newsletter", threadID: "demo-newsletter", title: "决策型邮件界面",
+            sender: "Stratechery", summary: "Luna 原子发布摘要",
+            whyItMatters: "验证原子发布。", suggestedAction: nil, category: .investment
+        )
+        let atomicPipeline = LunaDailyPipeline(
+            analyses: [atomicAnalysis],
+            brief: DailyBrief(
+                date: "2026-08-07", generatedAt: ISO8601DateFormatter().string(from: .now),
+                periodLabel: "过去24小时", headline: "原子发布成功", overview: "测试", total: 1,
+                priority: [], noteworthy: [atomicItem], later: [], lowPriorityCount: 0
+            )
+        )
+        let atomicPipelineURL = directory.appendingPathComponent("valid-luna-pipeline.json")
+        try JSONEncoder().encode(atomicPipeline).write(to: atomicPipelineURL)
+        guard try database.installLunaPipeline(from: atomicPipelineURL, expectedInput: lunaManifest) == 1,
+              try database.loadThread(id: "demo-newsletter")?.summary == "Luna 原子发布摘要",
+              try database.loadDailyBrief().headline == "原子发布成功",
+              try database.setting("last_brief_provider") == "codex:gpt-5.6-luna-medium" else {
+            throw SmokeFailure("valid Luna analysis and brief were not atomically published")
+        }
+
         let historyBrief = DailyBrief(
             date: "2026-08-06", generatedAt: ISO8601DateFormatter().string(from: .now), periodLabel: "过去24小时",
             headline: "历史简报保存测试", overview: "测试", total: 0,
@@ -286,7 +369,7 @@ struct EmailReaderSmokeTests {
             throw SmokeFailure("daily brief history did not persist")
         }
 
-        print("EmailReader smoke tests passed: bootstrap, state, attention ownership, category, search, headers, classification, brief mapping, alert safety, catch-up window, brief history, install validation")
+        print("EmailReader smoke tests passed: bootstrap, state, attention ownership, OAuth pinning, category, search, headers, classification, exact Luna manifest, atomic publication, brief mapping, alert safety, catch-up window, brief history, install validation")
     }
 }
 

@@ -31,6 +31,14 @@ Email Reader is a local-first macOS email intelligence desk for Gmail. It turns 
 open "$HOME/Applications/Email Reader.app"
 ```
 
+The default build is ad-hoc signed for personal installation only. Do not
+redistribute that binary. A public binary release must use an Apple Developer
+ID Application certificate, Hardened Runtime, and notarization:
+
+```bash
+EMAILREADER_SIGNING_IDENTITY="Developer ID Application: Example (TEAMID)" ./scripts/build_app.sh
+```
+
 ## Connect Gmail
 
 Create a Google Cloud OAuth client of type **Desktop app**, enable the Gmail API, and download the client JSON. In Email Reader, open **账户与更新设置**, choose the JSON, and finish the browser authorization for the Gmail account you want to read.
@@ -46,6 +54,8 @@ The app requests only profile identity plus `gmail.readonly`.
 - Remote images and tracking pixels are not rendered.
 - Email content is treated as untrusted input. Local and optional cloud prompts explicitly reject instructions embedded in mail.
 - The daily and manual Luna path sends the selected 24-hour email text to the user's authenticated Codex task so Luna can produce primary-source summaries. The app clips long bodies, treats email as untrusted input, and retains all mailbox data locally outside that analysis request.
+- Imported OAuth JSON cannot redirect credentials: only known Google endpoints are accepted and all token refreshes use the compiled-in canonical Google endpoint.
+- Luna results are bound to the exact exported mail-ID manifest and are published with the active brief in one SQLite transaction; rejected output cannot partially rewrite per-mail analysis.
 
 ## Data locations
 
@@ -57,3 +67,7 @@ The app requests only profile identity plus `gmail.readonly`.
 - Stable Gmail sync helper: `~/Library/Application Support/EmailReader/EmailReaderWorker`
 
 Generated build products and analysis artifacts are intentionally excluded from Git. Run `./scripts/verify.sh` to recreate and validate them.
+
+## License
+
+Released under the [MIT License](LICENSE).

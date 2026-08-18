@@ -2,7 +2,9 @@ import AppKit
 import Combine
 import EmailReaderCore
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 import SwiftUI
 
 enum SidebarSelection: Hashable {
@@ -333,15 +335,15 @@ final class AppModel: ObservableObject {
                     defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
                     let analysisInputURL = temporaryDirectory.appendingPathComponent("analysis-input.json")
                     let outputURL = temporaryDirectory.appendingPathComponent("luna-pipeline.json")
-                    let inputCount = try database.exportDailyLunaInput(to: analysisInputURL)
+                    let inputManifest = try database.exportDailyLunaInput(to: analysisInputURL)
 
                     syncPhase = "Luna Medium 正在逐封分析并整理"
                     try await LunaBriefRunner.run(analysisInputURL: analysisInputURL, outputURL: outputURL)
-                    let analyzedCount = try database.installLunaPipeline(from: outputURL)
+                    let analyzedCount = try database.installLunaPipeline(from: outputURL, expectedInput: inputManifest)
                     try database.recordRun(
                         trigger: "manual_luna",
                         status: "complete",
-                        discovered: inputCount,
+                        discovered: inputManifest.count,
                         analyzed: analyzedCount,
                         failed: 0,
                         detail: "Luna Medium 已完成逐封分类、摘要、投资 thesis 与每日简报。"
@@ -379,6 +381,7 @@ final class AppModel: ObservableObject {
     }
 
     func checkAnalysisAvailability() {
+#if canImport(FoundationModels)
         switch SystemLanguageModel.default.availability {
         case .available:
             analysisAvailability = "Apple 端侧模型可用"
@@ -391,6 +394,9 @@ final class AppModel: ObservableObject {
         case .unavailable:
             analysisAvailability = "端侧模型暂不可用"
         }
+#else
+        analysisAvailability = "当前 SDK 不含 Apple 端侧模型；Luna 流程不受影响"
+#endif
     }
 
     func connectGmail(oauthConfigurationURL: URL) async throws {

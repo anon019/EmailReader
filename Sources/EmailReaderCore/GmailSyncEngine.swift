@@ -17,6 +17,8 @@ public enum GmailHeaderNormalizer {
 }
 
 public final class GmailSyncEngine: Sendable {
+    private static let maximumMIMEPartDepth = 20
+    private static let maximumStoredBodyCharacters = 1_000_000
     private let database: EmailReaderDatabase
     private let client: GmailClient
     private let analyzer: MailAnalyzer
@@ -151,7 +153,7 @@ public final class GmailSyncEngine: Sendable {
         let receivedAt = Date(timeIntervalSince1970: TimeInterval(milliseconds(message.internalDate)) / 1000)
         let plain = findBody(message.payload, mimeType: "text/plain")
         let html = findBody(message.payload, mimeType: "text/html")
-        let body = plain ?? html.map(stripHTML) ?? message.snippet ?? ""
+        let body = String((plain ?? html.map(stripHTML) ?? message.snippet ?? "").prefix(maximumStoredBodyCharacters))
         return ParsedThread(
             subject: subject,
             senderName: from.name,
@@ -164,19 +166,19 @@ public final class GmailSyncEngine: Sendable {
         )
     }
 
-    private static func findBody(_ payload: GmailThreadPayload.Message.Payload?, mimeType: String) -> String? {
-        guard let payload else { return nil }
+    private static func findBody(_ payload: GmailThreadPayload.Message.Payload?, mimeType: String, depth: Int = 0) -> String? {
+        guard let payload, depth <= maximumMIMEPartDepth else { return nil }
         if payload.mimeType == mimeType, let encoded = payload.body?.data, let decoded = decodeBase64URL(encoded) { return decoded }
         for part in payload.parts ?? [] {
-            if let found = findBody(part, mimeType: mimeType), !found.isEmpty { return found }
+            if let found = findBody(part, mimeType: mimeType, depth: depth + 1), !found.isEmpty { return found }
         }
         return nil
     }
 
-    private static func hasAttachment(_ payload: GmailThreadPayload.Message.Payload?) -> Bool {
-        guard let payload else { return false }
+    private static func hasAttachment(_ payload: GmailThreadPayload.Message.Payload?, depth: Int = 0) -> Bool {
+        guard let payload, depth <= maximumMIMEPartDepth else { return false }
         if !(payload.filename ?? "").isEmpty { return true }
-        return (payload.parts ?? []).contains { hasAttachment($0) }
+        return (payload.parts ?? []).contains { hasAttachment($0, depth: depth + 1) }
     }
 
     private static func decodeBase64URL(_ value: String) -> String? {

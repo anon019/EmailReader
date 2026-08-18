@@ -124,6 +124,10 @@ public final class EmailReaderDatabase: @unchecked Sendable {
     }
 
     public func loadDailyBrief() throws -> DailyBrief {
+        if let value = try setting("active_daily_brief_json"),
+           let brief = try? JSONDecoder().decode(DailyBrief.self, from: Data(value.utf8)) {
+            return brief
+        }
         if let data = try? Data(contentsOf: dailyBriefURL),
            let brief = try? JSONDecoder().decode(DailyBrief.self, from: data) {
             return brief
@@ -132,8 +136,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
     }
 
     private func enforceActiveBriefAlertPolicy() throws {
-        guard let data = try? Data(contentsOf: dailyBriefURL),
-              let existing = try? JSONDecoder().decode(DailyBrief.self, from: data) else { return }
+        let existing = try loadDailyBrief()
         let threadByID = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
         let validPriority = existing.priority.filter { item in
             guard let thread = threadByID[item.threadID] else { return false }
@@ -157,9 +160,9 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             later: existing.later,
             lowPriorityCount: existing.lowPriorityCount + (existing.priority.count - validPriority.count)
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(repaired).write(to: dailyBriefURL, options: .atomic)
+        let repairedData = try Self.encodeBrief(repaired)
+        try setSetting("active_daily_brief_json", value: String(decoding: repairedData, as: UTF8.self))
+        try? writeBriefMirror(data: repairedData, date: repaired.date)
     }
 
     public func loadBriefHistory(limit: Int = 30) throws -> [DailyBrief] {
@@ -206,7 +209,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         try encoder.encode(envelope).write(to: destination, options: .atomic)
     }
 
-    public func exportDailyLunaInput(to destination: URL, now: Date = .now) throws -> Int {
+    public func exportDailyLunaInput(to destination: URL, now: Date = .now) throws -> LunaInputManifest {
         let dailyCutoff = Calendar.current.date(byAdding: .hour, value: -24, to: now) ?? .distantPast
         let contextCutoff = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? .distantPast
         let selected = try loadThreads(filter: .all).filter { thread in
@@ -235,7 +238,16 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encoder.encode(envelope).write(to: destination, options: .atomic)
-        return mails.count
+        return LunaInputManifest(ids: mails.map(\.id))
+    }
+
+    public func loadLunaInputManifest(from source: URL) throws -> LunaInputManifest {
+        let envelope = try JSONDecoder().decode(BriefInputEnvelope.self, from: Data(contentsOf: source))
+        let ids = envelope.mails.map(\.id)
+        guard ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count else {
+            throw EmailReaderDatabaseError.step("Luna 输入清单包含空 ID 或重复 ID。")
+        }
+        return LunaInputManifest(ids: ids)
     }
 
     public func exportCompactBriefInput(to destination: URL) throws {
@@ -338,44 +350,66 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         guard referencedIDs.allSatisfy(knownIDs.contains) else {
             throw EmailReaderDatabaseError.step("简报引用了本地不存在的邮件，未安装。")
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(brief)
-        try FileManager.default.createDirectory(at: dailyBriefURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: dailyBriefURL, options: .atomic)
-        try archiveBrief(data: data, date: brief.date)
-        try setSetting("last_codex_brief_at", value: Self.isoDate(.now))
-        try setSetting("last_brief_provider", value: "codex:gpt-5.6-luna-medium")
-        try setSetting("last_brief_at", value: Self.isoDate(.now))
+        try publishBrief(brief, provider: "codex:gpt-5.6-luna-medium", analyses: [])
     }
 
-    public func installLunaPipeline(from source: URL) throws -> Int {
+    public func installLunaPipeline(from source: URL, expectedInput: LunaInputManifest) throws -> Int {
         let data = try Data(contentsOf: source)
         let pipeline = try JSONDecoder().decode(LunaDailyPipeline.self, from: data)
-        let knownIDs = Set(try loadThreads(filter: .all).map(\.id))
+        guard Set(expectedInput.ids).count == expectedInput.count else {
+            throw EmailReaderDatabaseError.step("Luna 输入清单包含重复邮件，未安装。")
+        }
+        let expectedIDs = expectedInput.idSet
         let analysisIDs = pipeline.analyses.map(\.id)
-        guard !pipeline.analyses.isEmpty,
-              pipeline.analyses.count >= pipeline.brief.total,
+        guard pipeline.analyses.count == expectedInput.count,
               Set(analysisIDs).count == analysisIDs.count,
-              analysisIDs.allSatisfy(knownIDs.contains),
+              Set(analysisIDs) == expectedIDs,
               pipeline.analyses.allSatisfy({
                   !$0.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   !$0.whyImportant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   (0...100).contains($0.importance) &&
                   (0...1).contains($0.confidence)
               }) else {
-            throw EmailReaderDatabaseError.step("Luna 逐封分析不完整或引用了未知邮件，未安装。")
+            throw EmailReaderDatabaseError.step("Luna 逐封分析与本次输入清单不完全一致，未安装。")
         }
 
-        for analysis in pipeline.analyses {
-            try updateAnalysis(threadID: analysis.id, result: analysis.result)
+        let knownThreads = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
+        guard expectedIDs.allSatisfy({ knownThreads[$0] != nil }) else {
+            throw EmailReaderDatabaseError.step("Luna 输入引用了本地不存在的邮件，未安装。")
+        }
+        let analysesByID = Dictionary(uniqueKeysWithValues: pipeline.analyses.map { ($0.id, $0) })
+        let rawItems = pipeline.brief.priority + pipeline.brief.noteworthy + pipeline.brief.later
+        let itemThreadIDs = rawItems.map(\.threadID)
+        let itemIDs = rawItems.map(\.id)
+        let expectedPriorityIDs = Set(pipeline.analyses.filter { $0.result.needsAttention }.map(\.id))
+        let priorityIDs = Set(pipeline.brief.priority.map(\.threadID))
+        guard pipeline.brief.total == expectedInput.count,
+              rawItems.allSatisfy({ item in
+                  item.id == item.threadID &&
+                  expectedIDs.contains(item.threadID) &&
+                  analysesByID[item.threadID]?.category == item.category
+              }),
+              Set(itemThreadIDs).count == itemThreadIDs.count,
+              Set(itemIDs).count == itemIDs.count,
+              priorityIDs == expectedPriorityIDs,
+              rawItems.count + pipeline.brief.lowPriorityCount == expectedInput.count else {
+            throw EmailReaderDatabaseError.step("Luna 简报未完整覆盖本次输入、警报集合或计数，未安装。")
         }
 
-        let refreshedThreads = Dictionary(uniqueKeysWithValues: try loadThreads(filter: .all).map { ($0.id, $0) })
-        let validPriority = pipeline.brief.priority.filter { item in
-            guard let thread = refreshedThreads[item.threadID] else { return false }
-            return thread.needsAttention || thread.category == .security ||
-                (thread.category == .action && !thread.actionItems.isEmpty)
+        let priority = pipeline.brief.priority.compactMap { item -> DailyBriefItem? in
+            guard let analysis = analysesByID[item.threadID] else { return nil }
+            return Self.normalizedBriefItem(item, allowsAction: true, investmentThesis: analysis.result.investmentThesis)
+        }
+        guard priority.allSatisfy({ $0.suggestedAction?.isEmpty == false }) else {
+            throw EmailReaderDatabaseError.step("Luna 警报缺少具体处理建议，未安装。")
+        }
+        let noteworthy = pipeline.brief.noteworthy.compactMap { item -> DailyBriefItem? in
+            guard let analysis = analysesByID[item.threadID] else { return nil }
+            return Self.normalizedBriefItem(item, allowsAction: false, investmentThesis: analysis.result.investmentThesis)
+        }
+        let later = pipeline.brief.later.compactMap { item -> DailyBriefItem? in
+            guard let analysis = analysesByID[item.threadID] else { return nil }
+            return Self.normalizedBriefItem(item, allowsAction: false, investmentThesis: analysis.result.investmentThesis)
         }
         let sanitizedBrief = DailyBrief(
             date: pipeline.brief.date,
@@ -384,28 +418,21 @@ public final class EmailReaderDatabase: @unchecked Sendable {
             headline: pipeline.brief.headline,
             overview: pipeline.brief.overview,
             total: pipeline.brief.total,
-            priority: validPriority,
-            noteworthy: pipeline.brief.noteworthy,
-            later: pipeline.brief.later,
-            lowPriorityCount: pipeline.brief.lowPriorityCount + (pipeline.brief.priority.count - validPriority.count)
+            priority: priority,
+            noteworthy: noteworthy,
+            later: later,
+            lowPriorityCount: pipeline.brief.lowPriorityCount
         )
-        let briefURL = source.deletingLastPathComponent().appendingPathComponent("validated-daily-brief.json")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(sanitizedBrief).write(to: briefURL, options: .atomic)
-        try installDailyBrief(from: briefURL)
+        guard !sanitizedBrief.date.isEmpty,
+              !sanitizedBrief.headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EmailReaderDatabaseError.step("Luna 简报缺少日期或标题，未安装。")
+        }
+        try publishBrief(sanitizedBrief, provider: "codex:gpt-5.6-luna-medium", analyses: pipeline.analyses)
         return pipeline.analyses.count
     }
 
     public func saveDailyBrief(_ brief: DailyBrief, provider: String) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try FileManager.default.createDirectory(at: dailyBriefURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try encoder.encode(brief)
-        try data.write(to: dailyBriefURL, options: .atomic)
-        try archiveBrief(data: data, date: brief.date)
-        try setSetting("last_brief_provider", value: provider)
-        try setSetting("last_brief_at", value: Self.isoDate(.now))
+        try publishBrief(brief, provider: provider, analyses: [])
     }
 
     public func updateAnalysis(threadID: String, result: MailAnalysisResult) throws {
@@ -538,7 +565,7 @@ public final class EmailReaderDatabase: @unchecked Sendable {
 
     public func setSetting(_ key: String, value: String) throws {
         try withDatabase { db in
-            try execute(db, sql: "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", values: [key, value])
+            try setSettingInside(db, key: key, value: value)
         }
     }
 
@@ -555,6 +582,64 @@ public final class EmailReaderDatabase: @unchecked Sendable {
         guard !safeDate.isEmpty else { return }
         try FileManager.default.createDirectory(at: briefHistoryDirectory, withIntermediateDirectories: true)
         try data.write(to: briefHistoryDirectory.appendingPathComponent("\(safeDate).json"), options: .atomic)
+    }
+
+    private func writeBriefMirror(data: Data, date: String) throws {
+        try FileManager.default.createDirectory(at: dailyBriefURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: dailyBriefURL, options: .atomic)
+        try archiveBrief(data: data, date: date)
+    }
+
+    private func publishBrief(_ brief: DailyBrief, provider: String, analyses: [LunaMailAnalysis]) throws {
+        let data = try Self.encodeBrief(brief)
+        let json = String(decoding: data, as: UTF8.self)
+        let now = Self.isoDate(.now)
+        try withDatabase { db in
+            try executeScript(db, sql: "BEGIN IMMEDIATE")
+            do {
+                for analysis in analyses {
+                    try updateAnalysisInside(db, threadID: analysis.id, result: analysis.result)
+                }
+                try setSettingInside(db, key: "active_daily_brief_json", value: json)
+                try setSettingInside(db, key: "last_brief_provider", value: provider)
+                try setSettingInside(db, key: "last_brief_at", value: now)
+                if provider == "codex:gpt-5.6-luna-medium" {
+                    try setSettingInside(db, key: "last_codex_brief_at", value: now)
+                }
+                try executeScript(db, sql: "COMMIT")
+            } catch {
+                try? executeScript(db, sql: "ROLLBACK")
+                throw error
+            }
+        }
+        // SQLite is the authoritative atomic publication. These files are
+        // recoverable mirrors for history/export and never control the active UI.
+        try? writeBriefMirror(data: data, date: brief.date)
+    }
+
+    private func updateAnalysisInside(_ db: OpaquePointer, threadID: String, result: MailAnalysisResult) throws {
+        try execute(db, sql: """
+            UPDATE threads SET category=?, needs_attention=?, importance=?, summary=?, why_important=?,
+              action_items=?, deadline=?, confidence=?, investment_thesis_json=?, updated_at=? WHERE id=?
+            """, values: [
+                result.category.rawValue, result.needsAttention ? "1" : "0", String(result.importance),
+                result.summary, result.whyImportant, result.actionItems.joined(separator: "\n"),
+                result.deadline ?? "", String(result.confidence), Self.encodeInvestmentThesis(result.investmentThesis),
+                Self.isoDate(.now), threadID
+            ])
+        guard sqlite3_changes(db) == 1 else {
+            throw EmailReaderDatabaseError.step("Luna 分析引用的邮件在发布前发生变化，未安装。")
+        }
+    }
+
+    private func setSettingInside(_ db: OpaquePointer, key: String, value: String) throws {
+        try execute(db, sql: "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", values: [key, value])
+    }
+
+    private static func encodeBrief(_ brief: DailyBrief) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(brief)
     }
 
     private func withDatabase<T>(_ body: (OpaquePointer) throws -> T) throws -> T {

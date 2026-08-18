@@ -8,7 +8,7 @@ Production uses one Codex task with `gpt-5.6-luna` and medium reasoning. Luna di
 
    `"$HOME/Applications/Email Reader.app/Contents/MacOS/EmailReader" --codex-run-luna`
 
-2. The app itself creates and deletes the temporary directory, invokes `gpt-5.6-luna` with medium reasoning, validates every mail ID and the full structured output, and only then installs it.
+2. The app itself creates and deletes the temporary directory, invokes `gpt-5.6-luna` with medium reasoning, requires the output analysis IDs to exactly equal the in-memory input manifest, validates the full structured output, and then publishes the analyses and active brief in one SQLite transaction.
 3. Verify the result with:
 
    `"$HOME/Applications/Email Reader.app/Contents/MacOS/EmailReader" --codex-print-brief`

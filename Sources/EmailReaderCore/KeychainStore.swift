@@ -80,7 +80,7 @@ public struct KeychainStore: Sendable {
 public struct OAuthCredentialBundle: Codable, Sendable {
     public let clientID: String
     public let clientSecret: String
-    public let tokenEndpoint: String
+    public var tokenEndpoint: String
     public let refreshToken: String
     public var accessToken: String
     public var expiresAt: TimeInterval

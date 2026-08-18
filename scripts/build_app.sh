@@ -29,14 +29,28 @@ iconutil -c icns "$iconset_dir" -o "$app_dir/Contents/Resources/AppIcon.icns"
 cp "$project_dir/App/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$binary_dir/EmailReader" "$app_dir/Contents/MacOS/EmailReader"
 cp "$binary_dir/EmailReaderWorker" "$app_dir/Contents/Helpers/EmailReaderWorker"
-# The app remains an ad-hoc personal build. Gmail Keychain access is isolated
-# in an external worker that install_personal_app.sh installs once and preserves
-# across normal UI rebuilds, avoiding repeated OAuth ACL churn.
-local_requirement='=designated => identifier "com.sota.EmailReader.local"'
-codesign --force --deep --sign - \
-  --identifier "com.sota.EmailReader.local" \
-  --requirements "$local_requirement" \
-  "$app_dir"
+
+signing_identity="${EMAILREADER_SIGNING_IDENTITY:--}"
+if [[ "$signing_identity" == "-" ]]; then
+  # Personal source builds remain ad-hoc. The stable helper installed by
+  # install_personal_app.sh is preserved so routine refreshes do not repeatedly
+  # change the Keychain caller identity.
+  local_requirement='=designated => identifier "com.sota.EmailReader.local"'
+  codesign --force --deep --sign - \
+    --identifier "com.sota.EmailReader.local" \
+    --requirements "$local_requirement" \
+    "$app_dir"
+else
+  # Publicly distributed binaries must use a real Developer ID identity. This
+  # binds the designated requirement to Apple's certificate chain and enables
+  # Hardened Runtime instead of the forgeable identifier-only personal build.
+  codesign --force --sign "$signing_identity" --options runtime --timestamp \
+    "$app_dir/Contents/Helpers/EmailReaderWorker"
+  codesign --force --sign "$signing_identity" --options runtime --timestamp \
+    "$app_dir/Contents/MacOS/EmailReader"
+  codesign --force --sign "$signing_identity" --options runtime --timestamp \
+    "$app_dir"
+fi
 codesign --verify --deep --strict "$app_dir"
 
 echo "$app_dir"

@@ -38,15 +38,15 @@ private enum CodexBriefCommandRunner {
                 defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
                 let inputURL = temporaryDirectory.appendingPathComponent("analysis-input.json")
                 let outputURL = temporaryDirectory.appendingPathComponent("luna-pipeline.json")
-                let inputCount = try database.exportDailyLunaInput(to: inputURL)
+                let inputManifest = try database.exportDailyLunaInput(to: inputURL)
                 try await LunaBriefRunner.run(analysisInputURL: inputURL, outputURL: outputURL)
-                let analyzedCount = try database.installLunaPipeline(from: outputURL)
+                let analyzedCount = try database.installLunaPipeline(from: outputURL, expectedInput: inputManifest)
                 try database.recordRun(
-                    trigger: "cli_luna", status: "complete", discovered: inputCount,
+                    trigger: "cli_luna", status: "complete", discovered: inputManifest.count,
                     analyzed: analyzedCount, failed: 0,
                     detail: "Luna Medium 已完成逐封分类、摘要、投资 thesis 与每日简报。"
                 )
-                write("Luna 每日分析完成：\(analyzedCount)/\(inputCount) 封。\n")
+                write("Luna 每日分析完成：\(analyzedCount)/\(inputManifest.count) 封。\n")
             } else if let path = value(after: "--codex-authorize", in: arguments) {
                 try database.setAccountAuthState("authorizing")
                 try await GoogleOAuthCoordinator().authorize(
@@ -82,8 +82,8 @@ private enum CodexBriefCommandRunner {
                     throw CodexCommandError("Gmail 尚未授权，无法准备 Luna 每日分析。")
                 }
                 try await WorkerSyncRunner.sync(database: database, trigger: "luna_daily_sync")
-                let count = try database.exportDailyLunaInput(to: URL(fileURLWithPath: path))
-                write("已同步 Gmail，并导出 \(count) 封待 Luna 逐封分析的邮件：\(path)\n")
+                let manifest = try database.exportDailyLunaInput(to: URL(fileURLWithPath: path))
+                write("已同步 Gmail，并导出 \(manifest.count) 封待 Luna 逐封分析的邮件：\(path)\n")
             } else if let path = value(after: "--codex-export-compact-only", in: arguments) {
                 try database.exportCompactBriefInput(to: URL(fileURLWithPath: path))
                 write("已导出当前简报的不含正文紧凑输入：\(path)\n")
@@ -108,7 +108,14 @@ private enum CodexBriefCommandRunner {
                 let brief = try database.loadDailyBrief()
                 write("已安装每日简报：\(brief.headline)\n")
             } else if let path = value(after: "--codex-install-luna-pipeline", in: arguments) {
-                let count = try database.installLunaPipeline(from: URL(fileURLWithPath: path))
+                guard let inputPath = value(after: "--codex-input", in: arguments) else {
+                    throw CodexCommandError("安装 Luna 结果必须同时提供 --codex-input <analysis-input.json>，用于精确核对本次邮件 ID。")
+                }
+                let manifest = try database.loadLunaInputManifest(from: URL(fileURLWithPath: inputPath))
+                let count = try database.installLunaPipeline(
+                    from: URL(fileURLWithPath: path),
+                    expectedInput: manifest
+                )
                 let brief = try database.loadDailyBrief()
                 write("已安装 Luna 逐封分析 \(count) 封及每日简报：\(brief.headline)\n")
             } else if arguments.contains("--codex-print-brief") {

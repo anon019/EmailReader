@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 — 2026-08-18
+
+- Pinned imported OAuth configurations and every token refresh to canonical Google endpoints.
+- Bound Luna output to the exact exported email-ID manifest and made the active analyses plus brief one atomic SQLite publication.
+- Hardened loopback OAuth callbacks, Gmail response/history limits, MIME depth, and stored-body bounds.
+- Added explicit Developer ID release signing support while retaining the stable personal ad-hoc build path.
+- Removed workstation-specific icon metadata and expanded generated email-artifact exclusions.
+- Added public security guidance, a portable SQLite module shim, and the MIT license.
+
 ## 1.0.0 — 2026-08-07
 
 - Shipped a brief-first native macOS workspace for one read-only Gmail account.

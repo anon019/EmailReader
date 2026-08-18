@@ -5,6 +5,18 @@ import Network
 import Security
 
 public struct GoogleOAuthClient: Codable, Sendable {
+    public static let canonicalAuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
+    public static let canonicalTokenEndpoint = "https://oauth2.googleapis.com/token"
+
+    private static let allowedAuthorizationEndpoints: Set<String> = [
+        canonicalAuthorizationEndpoint,
+        "https://accounts.google.com/o/oauth2/auth"
+    ]
+    private static let allowedTokenEndpoints: Set<String> = [
+        canonicalTokenEndpoint,
+        "https://accounts.google.com/o/oauth2/token"
+    ]
+
     public let clientID: String
     public let clientSecret: String
     public let authorizationEndpoint: String
@@ -31,11 +43,17 @@ public struct GoogleOAuthClient: Codable, Sendable {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         let root = try JSONDecoder().decode(Root.self, from: Data(contentsOf: url))
+        guard !root.installed.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !root.installed.clientSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              allowedAuthorizationEndpoints.contains(root.installed.authURI),
+              allowedTokenEndpoints.contains(root.installed.tokenURI) else {
+            throw GoogleOAuthError.invalidConfiguration
+        }
         return GoogleOAuthClient(
             clientID: root.installed.clientID,
             clientSecret: root.installed.clientSecret,
-            authorizationEndpoint: root.installed.authURI,
-            tokenEndpoint: root.installed.tokenURI
+            authorizationEndpoint: canonicalAuthorizationEndpoint,
+            tokenEndpoint: canonicalTokenEndpoint
         )
     }
 }
@@ -87,12 +105,12 @@ public final class GoogleOAuthCoordinator: @unchecked Sendable {
         do { client = try GoogleOAuthClient.load(from: configurationURL) }
         catch { throw GoogleOAuthError.invalidConfiguration }
 
-        let server = OAuthLoopbackServer()
-        let port = try await server.start()
-        let redirectURI = "http://127.0.0.1:\(port)"
         let verifier = Self.randomVerifier()
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
         let state = Self.randomVerifier(length: 32)
+        let server = OAuthLoopbackServer(expectedState: state)
+        let port = try await server.start()
+        let redirectURI = "http://127.0.0.1:\(port)"
 
         var components = URLComponents(string: client.authorizationEndpoint)
         var queryItems = [
@@ -173,31 +191,56 @@ public final class GoogleOAuthCoordinator: @unchecked Sendable {
 private final class OAuthLoopbackServer: @unchecked Sendable {
     struct Callback: Sendable { let code: String?; let state: String?; let error: String? }
 
+    private let expectedState: String
     private let queue = DispatchQueue(label: "com.sota.EmailReader.oauth-loopback")
     private var listener: NWListener?
+    private var startContinuation: CheckedContinuation<UInt16, Error>?
     private var callbackContinuation: CheckedContinuation<Callback, Error>?
     private var pendingCallback: Callback?
     private let lock = NSLock()
 
+    init(expectedState: String) {
+        self.expectedState = expectedState
+    }
+
     func start() async throws -> UInt16 {
         try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            startContinuation = continuation
+            lock.unlock()
             do {
-                let listener = try NWListener(using: .tcp, on: .any)
+                let parameters = NWParameters.tcp
+                parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+                let listener = try NWListener(using: parameters)
                 self.listener = listener
                 listener.stateUpdateHandler = { [weak self] state in
                     switch state {
                     case .ready:
-                        if let port = self?.listener?.port?.rawValue { continuation.resume(returning: port) }
+                        if let port = self?.listener?.port?.rawValue {
+                            self?.finishStart(.success(port))
+                        }
                     case .failed(let error):
-                        continuation.resume(throwing: GoogleOAuthError.listener(error.localizedDescription))
+                        self?.finishStart(.failure(GoogleOAuthError.listener(error.localizedDescription)))
                     default: break
                     }
                 }
                 listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
                 listener.start(queue: queue)
             } catch {
-                continuation.resume(throwing: error)
+                finishStart(.failure(error))
             }
+        }
+    }
+
+    private func finishStart(_ result: Result<UInt16, Error>) {
+        lock.lock()
+        let continuation = startContinuation
+        startContinuation = nil
+        lock.unlock()
+        guard let continuation else { return }
+        switch result {
+        case .success(let port): continuation.resume(returning: port)
+        case .failure(let error): continuation.resume(throwing: error)
         }
     }
 
@@ -220,15 +263,37 @@ private final class OAuthLoopbackServer: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
             guard let self, let data, let request = String(data: data, encoding: .utf8), let firstLine = request.split(separator: "\r\n").first else { return }
             let parts = firstLine.split(separator: " ")
-            guard parts.count >= 2, let url = URL(string: "http://127.0.0.1\(parts[1])"), let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
-            let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            guard parts.count >= 2,
+                  parts[0] == "GET",
+                  let url = URL(string: "http://127.0.0.1\(parts[1])"),
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  components.path == "/" else {
+                self.respond(connection, status: "400 Bad Request", message: "OAuth 回调无效，请返回 App 重试。")
+                return
+            }
+            var items: [String: String] = [:]
+            for item in components.queryItems ?? [] {
+                guard items[item.name] == nil else {
+                    self.respond(connection, status: "400 Bad Request", message: "OAuth 回调参数重复，请返回 App 重试。")
+                    return
+                }
+                items[item.name] = item.value ?? ""
+            }
             let callback = Callback(code: items["code"], state: items["state"], error: items["error"])
-            let html = "<html><body style='font-family:-apple-system;padding:48px'><h2>Email Reader 已获得授权</h2><p>可以关闭此页面并返回 App。</p></body></html>"
-            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
-            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+            guard callback.state == self.expectedState else {
+                self.respond(connection, status: "400 Bad Request", message: "安全校验失败；原授权窗口仍可继续。")
+                return
+            }
+            self.respond(connection, status: "200 OK", message: "Email Reader 已获得授权，可以关闭此页面并返回 App。")
             self.deliver(callback)
             self.listener?.cancel()
         }
+    }
+
+    private func respond(_ connection: NWConnection, status: String, message: String) {
+        let html = "<html><body style='font-family:-apple-system;padding:48px'><h2>\(message)</h2></body></html>"
+        let response = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+        connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
     }
 
     private func deliver(_ callback: Callback) {

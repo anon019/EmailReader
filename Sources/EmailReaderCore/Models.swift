@@ -350,6 +350,17 @@ public struct BriefInputEnvelope: Codable, Sendable {
     public let mails: [BriefInputMail]
 }
 
+public struct LunaInputManifest: Sendable, Equatable {
+    public let ids: [String]
+
+    public init(ids: [String]) {
+        self.ids = ids
+    }
+
+    public var count: Int { ids.count }
+    public var idSet: Set<String> { Set(ids) }
+}
+
 public struct LunaMailAnalysis: Codable, Sendable {
     public let id: String
     public let category: MailCategory

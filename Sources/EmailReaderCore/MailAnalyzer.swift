@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 public struct MailAnalysisResult: Sendable {
     public let category: MailCategory
@@ -59,6 +61,7 @@ public actor MailAnalyzer {
     }
 
     public func analyze(subject: String, sender: String, body: String) async -> MailAnalysisResult {
+#if canImport(FoundationModels)
         guard SystemLanguageModel.default.isAvailable else {
             return heuristic(subject: subject, sender: sender, body: body)
         }
@@ -98,6 +101,9 @@ public actor MailAnalyzer {
         } catch {
             return heuristic(subject: subject, sender: sender, body: body)
         }
+#else
+        return heuristic(subject: subject, sender: sender, body: body)
+#endif
     }
 
     private func heuristic(subject: String, sender: String, body: String) -> MailAnalysisResult {

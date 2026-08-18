@@ -4,12 +4,16 @@ public enum GmailClientError: Error, LocalizedError {
     case notAuthorized
     case invalidURL
     case http(Int, String)
+    case responseTooLarge
+    case historyLimitExceeded
 
     public var errorDescription: String? {
         switch self {
         case .notAuthorized: "Gmail 尚未授权。"
         case .invalidURL: "Gmail API 地址无效。"
         case .http(let status, let body): "Gmail API 请求失败（\(status)）：\(body)"
+        case .responseTooLarge: "Gmail API 返回内容超过本地安全上限。"
+        case .historyLimitExceeded: "Gmail 历史增量超过单次安全上限；未推进同步游标，请稍后重试。"
         }
     }
 
@@ -31,7 +35,8 @@ public actor GoogleTokenProvider {
             throw GmailClientError.notAuthorized
         }
         if Date().timeIntervalSince1970 < credentials.expiresAt { return credentials.accessToken }
-        guard let url = URL(string: credentials.tokenEndpoint) else { throw GmailClientError.notAuthorized }
+        credentials.tokenEndpoint = GoogleOAuthClient.canonicalTokenEndpoint
+        guard let url = URL(string: GoogleOAuthClient.canonicalTokenEndpoint) else { throw GmailClientError.notAuthorized }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -109,6 +114,8 @@ public struct GmailThreadPayload: Decodable, Sendable {
 public actor GmailClient {
     private let tokenProvider: GoogleTokenProvider
     private let baseURL = "https://gmail.googleapis.com/gmail/v1/users/me"
+    private let maximumResponseBytes = 20 * 1024 * 1024
+    private let maximumHistoryPages = 50
 
     public init(tokenProvider: GoogleTokenProvider = GoogleTokenProvider()) {
         self.tokenProvider = tokenProvider
@@ -137,6 +144,7 @@ public actor GmailClient {
     public func changedThreadIDs(since historyID: String) async throws -> [String] {
         var ids = Set<String>()
         var token: String?
+        var pageCount = 0
         repeat {
             var query = [
                 URLQueryItem(name: "startHistoryId", value: historyID),
@@ -145,12 +153,14 @@ public actor GmailClient {
             ]
             if let token { query.append(URLQueryItem(name: "pageToken", value: token)) }
             let page: GmailHistoryList = try await get(path: "/history", query: query, as: GmailHistoryList.self)
+            pageCount += 1
             for item in page.history ?? [] {
                 for message in item.messages ?? [] { ids.insert(message.threadId) }
                 for added in item.messagesAdded ?? [] { ids.insert(added.message.threadId) }
             }
             token = page.nextPageToken
-        } while token != nil
+        } while token != nil && pageCount < maximumHistoryPages
+        guard token == nil else { throw GmailClientError.historyLimitExceeded }
         return Array(ids)
     }
 
@@ -166,6 +176,7 @@ public actor GmailClient {
         request.setValue("Bearer \(try await tokenProvider.accessToken())", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
+        guard data.count <= maximumResponseBytes else { throw GmailClientError.responseTooLarge }
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw GmailClientError.http((response as? HTTPURLResponse)?.statusCode ?? 0, String(data: data, encoding: .utf8) ?? "")
         }
