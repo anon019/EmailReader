@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Email Reader · 每日情报简报流程</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}body{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","JetBrains Mono",sans-serif;background:#020617;color:#fff;min-height:100vh;padding:32px}.container{max-width:1500px;margin:auto}.header{margin-bottom:24px}.header-row{display:flex;align-items:center;gap:14px}.pulse{width:12px;height:12px;border-radius:50%;background:#a78bfa;animation:pulse 2s infinite}@keyframes pulse{50%{opacity:.45}}h1{font-size:25px}.subtitle{margin:8px 0 0 27px;color:#94a3b8;font-size:14px}.diagram{background:#0f172a80;border:1px solid #1e293b;border-radius:16px;padding:18px;overflow-x:auto}.diagram svg{display:block;width:100%;min-width:1120px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}.card{background:#0f172a80;border:1px solid #1e293b;border-radius:12px;padding:18px}.card h3{font-size:14px;margin-bottom:10px}.card ul{list-style:none;color:#94a3b8;font-size:12px;line-height:1.75}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}.slate{background:#94a3b8}.violet{background:#a78bfa}.emerald{background:#34d399}.footer{text-align:center;color:#475569;font-size:12px;margin-top:20px}.toolbar{margin-left:auto;display:flex;align-items:center;gap:8px}.toolbar-actions{display:none;gap:8px}.toolbar.expanded .toolbar-actions{display:flex}.toolbar button{font-family:inherit;font-size:12px;color:#94a3b8;background:#1e293bcc;border:1px solid #334155;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar-toggle{font-size:20px!important;background:transparent!important;border:0!important}@media(max-width:900px){body{padding:18px}.cards{grid-template-columns:1fr}}@media print{.toolbar{display:none}.diagram{overflow:visible}}
+  </style>
+</head>
+<body>
+<main class="container" id="report-container">
+  <header class="header"><div class="header-row"><span class="pulse"></span><h1>Email Reader · 每日情报简报流程</h1><div class="toolbar"><div class="toolbar-actions"><button onclick="copyAsImage(this)">📋 Copy</button><button onclick="downloadPNG(this)">🖼️ PNG</button><button onclick="downloadPDF(this)">📄 PDF</button></div><button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" aria-label="导出选项">⋯</button></div></div><p class="subtitle">每天自动交付一份可处理的邮件情报，而不是复制一遍 Gmail 收件箱</p></header>
+  <section class="diagram">
+    <svg viewBox="0 0 1460 700" role="img" aria-label="Daily email intelligence process flow">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".5"/></pattern>
+        <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#64748b"/></marker>
+        <marker id="arr-v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#a78bfa"/></marker>
+        <marker id="arr-a" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#fbbf24"/></marker>
+        <marker id="arr-e" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#34d399"/></marker>
+        <marker id="arr-r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#fb7185"/></marker>
+        <marker id="arr-c" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5 0 7Z" fill="#22d3ee"/></marker>
+      </defs>
+      <rect width="1460" height="700" fill="url(#grid)"/>
+      <rect x="30" y="24" width="1400" height="72" rx="9" fill="#1e293b33" stroke="#64748b" stroke-dasharray="6 4"/>
+      <text x="52" y="49" fill="#94a3b8" font-size="10" font-weight="700">运行前提</text>
+      <text x="52" y="72" fill="#64748b" font-size="9">● Gmail 已完成一次只读 OAuth 授权</text><text x="350" y="72" fill="#64748b" font-size="9">● Codex 已登录，可调用 Luna Medium</text><text x="696" y="72" fill="#64748b" font-size="9">● 上一份有效简报可随时回退</text><text x="1020" y="72" fill="#64748b" font-size="9">● 邮件正文始终按不可信输入处理</text>
+
+      <!-- Connectors first -->
+      <path d="M154 204H194" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arr-c)"/>
+      <path d="M374 204H409" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arr-a)"/>
+      <path d="M589 204H624" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arr-v)"/>
+      <path d="M804 204H839" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arr-v)"/>
+      <path d="M1019 204H1054" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arr-a)"/>
+      <path d="M1234 204H1281" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arr-a)"/>
+      <path d="M1340 263V334H1176V367" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arr-e)"/>
+      <path d="M1056 418H1019" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arr-v)"/>
+      <path d="M839 418H804" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arr-c)"/>
+      <path d="M624 418H589" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arr-e)"/>
+      <path d="M409 418H374" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arr-e)"/>
+      <path d="M194 418H154" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arr-c)"/>
+      <path d="M1340 263V521H1170V539" fill="none" stroke="#fb7185" stroke-width="1.8" marker-end="url(#arr-r)"/>
+      <path d="M1080 578H520V486" fill="none" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arr-r)"/>
+      <path d="M92 438V631H1340V283" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#arr-c)"/>
+
+      <!-- Top row -->
+      <g><rect x="44" y="183" width="110" height="42" rx="21" fill="#083344" stroke="#22d3ee" stroke-width="2"/><text x="99" y="209" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">开始</text><text x="99" y="244" text-anchor="middle" fill="#22d3ee" font-size="8">07:30 / 手动</text></g>
+      <g><circle cx="194" cy="150" r="13" fill="#1e293b" stroke="#fbbf24"/><text x="194" y="154" text-anchor="middle" fill="#fff" font-size="10">1</text><text x="284" y="143" text-anchor="middle" fill="#fbbf24" font-size="8">🔗 GMAIL API</text><rect x="194" y="158" width="180" height="92" rx="9" fill="#0f172a" stroke="#fbbf24" stroke-width="1.6"/><text x="284" y="187" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">增量抓取邮件</text><text x="284" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">首次 7 天 · 后续 historyId</text><text x="284" y="226" text-anchor="middle" fill="#94a3b8" font-size="9">只读纯文本，不加载远程图</text></g>
+      <g><circle cx="409" cy="150" r="13" fill="#1e293b" stroke="#a78bfa"/><text x="409" y="154" text-anchor="middle" fill="#fff" font-size="10">2</text><text x="499" y="143" text-anchor="middle" fill="#a78bfa" font-size="8">⚡ LOCAL RULES</text><rect x="409" y="158" width="180" height="92" rx="9" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/><text x="499" y="187" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">清洗与安全门控</text><text x="499" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">去 HTML 噪音 · 初始分类</text><text x="499" y="226" text-anchor="middle" fill="#94a3b8" font-size="9">风险/付款/期限强制保留</text></g>
+      <g><circle cx="624" cy="150" r="13" fill="#1e293b" stroke="#a78bfa"/><text x="624" y="154" text-anchor="middle" fill="#fff" font-size="10">3</text><text x="714" y="143" text-anchor="middle" fill="#a78bfa" font-size="8">⚡ INPUT CONTRACT</text><rect x="624" y="158" width="180" height="92" rx="9" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/><text x="714" y="187" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">导出精确 Manifest</text><text x="714" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">每封唯一 ID + 元数据</text><text x="714" y="226" text-anchor="middle" fill="#94a3b8" font-size="9">正文最多 9,000 字符/封</text></g>
+      <g><circle cx="839" cy="150" r="13" fill="#1e293b" stroke="#fbbf24"/><text x="839" y="154" text-anchor="middle" fill="#fff" font-size="10">4</text><text x="929" y="143" text-anchor="middle" fill="#fbbf24" font-size="8">☁ LUNA MEDIUM</text><rect x="839" y="158" width="180" height="92" rx="9" fill="#0f172a" stroke="#fbbf24" stroke-width="1.6"/><text x="929" y="187" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">逐封深度解读</text><text x="929" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">摘要 · 分类 · 重要性 · 行动</text><text x="929" y="226" text-anchor="middle" fill="#94a3b8" font-size="9">投资信提炼 Thesis / 风险 / 催化</text></g>
+      <g><circle cx="1054" cy="150" r="13" fill="#1e293b" stroke="#fbbf24"/><text x="1054" y="154" text-anchor="middle" fill="#fff" font-size="10">5</text><text x="1144" y="143" text-anchor="middle" fill="#fbbf24" font-size="8">☁ GLOBAL EDIT</text><rect x="1054" y="158" width="180" height="92" rx="9" fill="#0f172a" stroke="#fbbf24" stroke-width="1.6"/><text x="1144" y="187" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">跨邮件编辑简报</text><text x="1144" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">去重 · 聚类 · 排序 · 降噪</text><text x="1144" y="226" text-anchor="middle" fill="#94a3b8" font-size="9">预警 / 强信号 / 稍后阅读</text></g>
+      <g transform="translate(1340 204)"><rect x="-42" y="-42" width="84" height="84" rx="5" transform="rotate(45)" fill="#0f172a" stroke="#fb7185" stroke-width="1.7"/><text y="-4" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">完整且</text><text y="13" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">可验证?</text></g>
+      <text x="1360" y="310" fill="#34d399" font-size="9" font-weight="700">YES</text><text x="1360" y="513" fill="#fb7185" font-size="9" font-weight="700">NO</text>
+
+      <!-- Bottom row, right to left -->
+      <g><circle cx="1056" cy="364" r="13" fill="#1e293b" stroke="#a78bfa"/><text x="1056" y="368" text-anchor="middle" fill="#fff" font-size="10">6</text><text x="1146" y="357" text-anchor="middle" fill="#a78bfa" font-size="8">⚡ ATOMIC WRITE</text><rect x="1056" y="372" width="180" height="92" rx="9" fill="#0f172a" stroke="#a78bfa" stroke-width="1.6"/><text x="1146" y="401" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">SQLite 原子发布</text><text x="1146" y="421" text-anchor="middle" fill="#94a3b8" font-size="9">邮件分析 + 当前简报同事务</text><text x="1146" y="440" text-anchor="middle" fill="#94a3b8" font-size="9">归档历史 + 记录真实模型</text></g>
+      <g><circle cx="839" cy="364" r="13" fill="#1e293b" stroke="#22d3ee"/><text x="839" y="368" text-anchor="middle" fill="#fff" font-size="10">7</text><text x="929" y="357" text-anchor="middle" fill="#22d3ee" font-size="8">🖥 SWIFTUI</text><rect x="839" y="372" width="180" height="92" rx="9" fill="#0f172a" stroke="#22d3ee" stroke-width="1.6"/><text x="929" y="401" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">刷新情报工作台</text><text x="929" y="421" text-anchor="middle" fill="#94a3b8" font-size="9">先显示今日必须处理</text><text x="929" y="440" text-anchor="middle" fill="#94a3b8" font-size="9">再显示主题、分类与 Thesis</text></g>
+      <g><circle cx="624" cy="364" r="13" fill="#1e293b" stroke="#34d399"/><text x="624" y="368" text-anchor="middle" fill="#fff" font-size="10">8</text><text x="714" y="357" text-anchor="middle" fill="#34d399" font-size="8">👤 DECISION</text><rect x="624" y="372" width="180" height="92" rx="9" fill="#0f172a" stroke="#34d399" stroke-width="1.6"/><text x="714" y="401" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">5 分钟过一遍</text><text x="714" y="421" text-anchor="middle" fill="#94a3b8" font-size="9">已核实 / 稍后 / 完成 / 忽略</text><text x="714" y="440" text-anchor="middle" fill="#94a3b8" font-size="9">必要时跳转 Gmail 查原文</text></g>
+      <g><circle cx="409" cy="364" r="13" fill="#1e293b" stroke="#34d399"/><text x="409" y="368" text-anchor="middle" fill="#fff" font-size="10">9</text><text x="499" y="357" text-anchor="middle" fill="#34d399" font-size="8">👤 LOCAL STATE</text><rect x="409" y="372" width="180" height="92" rx="9" fill="#0f172a" stroke="#34d399" stroke-width="1.6"/><text x="499" y="401" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">保存阅读决策</text><text x="499" y="421" text-anchor="middle" fill="#94a3b8" font-size="9">未读 / 待看 / 关注 / 完成</text><text x="499" y="440" text-anchor="middle" fill="#94a3b8" font-size="9">仅本地，不反写 Gmail</text></g>
+      <g><rect x="194" y="397" width="180" height="42" rx="21" fill="#083344" stroke="#22d3ee" stroke-width="2"/><text x="284" y="423" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">今日简报完成</text></g>
+      <g><rect x="44" y="397" width="110" height="42" rx="21" fill="#083344" stroke="#22d3ee" stroke-width="2"/><text x="99" y="423" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">等待下一次</text></g>
+
+      <!-- Failure path -->
+      <g><rect x="1080" y="539" width="260" height="78" rx="10" fill="#0f172a" stroke="#fb7185" stroke-width="1.6"/><text x="1104" y="566" fill="#fff" font-size="12" font-weight="700">失败安全：拒绝本次输出</text><text x="1104" y="587" fill="#94a3b8" font-size="9">保留上一份有效简报 · 不写入部分分析</text><text x="1104" y="605" fill="#fb7185" font-size="9">记录失败回执，界面明确显示状态</text></g>
+      <text x="690" y="570" text-anchor="middle" fill="#fb7185" font-size="8">schema / exact ID / category / action gate failed</text>
+
+      <!-- Legend -->
+      <g transform="translate(44 548)"><text fill="#fff" font-size="10" font-weight="700">图例</text><rect y="18" width="16" height="10" rx="2" fill="#083344" stroke="#22d3ee"/><text x="23" y="27" fill="#94a3b8" font-size="8">开始 / 结束</text><rect x="100" y="18" width="16" height="10" rx="2" fill="#2e1065" stroke="#a78bfa"/><text x="123" y="27" fill="#94a3b8" font-size="8">本地自动处理</text><rect x="220" y="18" width="16" height="10" rx="2" fill="#451a03" stroke="#fbbf24"/><text x="243" y="27" fill="#94a3b8" font-size="8">外部集成 / 模型</text><rect x="356" y="18" width="16" height="10" rx="2" fill="#052e2b" stroke="#34d399"/><text x="379" y="27" fill="#94a3b8" font-size="8">用户决策</text></g>
+    </svg>
+  </section>
+  <section class="cards">
+    <article class="card"><h3><span class="dot slate"></span>输入与选择</h3><ul><li>• 定时和手动更新走同一条 Luna 正式管线</li><li>• 每封入选邮件都必须产生一条精确 ID 分析</li><li>• 长信正文裁剪为最多 9,000 字符纯文本</li></ul></article>
+    <article class="card"><h3><span class="dot violet"></span>质量门</h3><ul><li>• 每封先提炼，再做跨邮件聚类、排序和降噪</li><li>• 投资邮件结构化提取 Thesis、证据、催化与风险</li><li>• 校验不通过时不覆盖上一份有效简报</li></ul></article>
+    <article class="card"><h3><span class="dot emerald"></span>用户得到什么</h3><ul><li>• 一眼看到今日风险、必须处理与新增强信号</li><li>• 每封未读都有类别、摘要、重要性与来源证据</li><li>• 只有需要核对原文时才跳转 Gmail</li></ul></article>
+  </section>
+  <p class="footer">Email Reader daily intelligence pipeline · Cocoon AI diagram system · MIT License · 2026-08-22</p>
+</main>
+<script>
+  const capture=()=>{const e=document.getElementById('report-container'),r=e.getBoundingClientRect(),p=32;return html2canvas(document.body,{backgroundColor:'#020617',scale:2,useCORS:true,ignoreElements:x=>x.classList&&x.classList.contains('toolbar'),x:r.left+scrollX-p,y:r.top+scrollY-p,width:r.width+p*2,height:r.height+p*2})};
+  async function copyAsImage(b){const o=b.textContent;try{const c=await capture(),blob=await new Promise(r=>c.toBlob(r,'image/png'));await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);b.textContent='✓ Copied'}catch{b.textContent='✗ Failed'}setTimeout(()=>b.textContent=o,1800)}
+  async function downloadPNG(b){const o=b.textContent;try{const c=await capture(),a=document.createElement('a');a.download='daily-intelligence-flow.png';a.href=c.toDataURL('image/png');a.click();b.textContent='✓ Done'}catch{b.textContent='✗ Failed'}setTimeout(()=>b.textContent=o,1800)}
+  async function downloadPDF(b){const o=b.textContent;try{const c=await capture(),{jsPDF}=window.jspdf,p=new jsPDF({orientation:'landscape',unit:'px',format:[c.width,c.height],hotfixes:['px_scaling']});p.addImage(c.toDataURL('image/png'),'PNG',0,0,c.width,c.height);p.save('daily-intelligence-flow.pdf');b.textContent='✓ Done'}catch{b.textContent='✗ Failed'}setTimeout(()=>b.textContent=o,1800)}
+</script>
+</body>
+</html>

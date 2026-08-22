@@ -5,6 +5,10 @@ repository is public; mailbox data and credentials are not part of the project.
 
 ## Data boundaries
 
+The [local-first architecture diagram](Docs/email-reader-architecture.html) and
+its [GitHub-renderable preview](Docs/assets/email-reader-architecture.png) show
+the credential, local-data, Gmail, and Codex/Luna trust boundaries.
+
 - Mail content and reading state remain under `~/Library/Application Support/EmailReader/`.
 - OAuth credentials remain in macOS Keychain under `com.sota.EmailReader.oauth.v4`.
 - A fixed local sync helper owns routine Keychain access and is installed with mode `0700`. UI rebuilds do not replace it automatically.

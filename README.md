@@ -2,6 +2,26 @@
 
 Email Reader is a local-first macOS email intelligence desk for Gmail. It turns new mail into a daily briefing, risk queue, and focused reading list instead of recreating a Gmail inbox.
 
+## Architecture and daily workflow
+
+The production path is deliberately brief-first: Gmail is a read-only source,
+Luna Medium is the formal interpretation engine, and SQLite is the local source
+of truth for reading state and published briefings.
+
+### Local-first system architecture
+
+[![Email Reader local-first architecture](Docs/assets/email-reader-architecture.png)](Docs/email-reader-architecture.html)
+
+### Daily intelligence pipeline
+
+[![Email Reader daily intelligence pipeline](Docs/assets/daily-intelligence-flow.png)](Docs/daily-intelligence-flow.html)
+
+Open the linked standalone HTML files in a browser to inspect the full-size SVG
+or export a high-resolution PNG/PDF. See [Architecture](Docs/ARCHITECTURE.md) for
+component responsibilities, trust boundaries, and failure behavior. The diagram
+system is adapted from [Cocoon AI's MIT-licensed Architecture Diagram
+Generator](https://github.com/Cocoon-AI/architecture-diagram-generator).
+
 ## Version 1.0
 
 - Brief-first native SwiftUI workspace; the original mailbox is a collapsed evidence library.

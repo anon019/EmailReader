@@ -2,6 +2,10 @@
 
 Production uses one Codex task with `gpt-5.6-luna` and medium reasoning. Luna directly analyzes every selected email, then produces the global daily brief. Qwen is an explicit offline fallback only and must never overwrite a Luna brief.
 
+See the [daily intelligence flow diagram](Docs/daily-intelligence-flow.html) or
+its [GitHub-renderable preview](Docs/assets/daily-intelligence-flow.png) for the
+complete scheduled/manual path, validation gate, and failure-safe branch.
+
 ## Scheduled sequence
 
 1. Run the installed app's complete validated Luna pipeline:

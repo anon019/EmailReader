@@ -10,6 +10,9 @@
 
 ## Codex-selected direction
 
+The product-facing information architecture is connected to the implementation
+in the [system architecture and daily workflow](Docs/ARCHITECTURE.md).
+
 ### Visual thesis
 
 A quiet morning editorial desk: warm paper, ink-like typography, one amber signal color, and dense information shaped by whitespace rather than card chrome.
