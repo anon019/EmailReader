@@ -100,7 +100,12 @@ final class AppModel: ObservableObject {
     }
 
     var todayFocusTitle: String {
-        brief.priority.isEmpty ? "今天没有必须处理的事项" : "今天只需要处理 \(brief.priority.count) 件事"
+        if dailyAlertThreads.isEmpty {
+            return brief.priority.isEmpty
+                ? "今天没有必须处理的事项"
+                : "今天的 \(brief.priority.count) 项警报已处理完成"
+        }
+        return "还有 \(dailyAlertThreads.count) 件事需要处理"
     }
 
     func reload(preserveSelection: Bool = true) {

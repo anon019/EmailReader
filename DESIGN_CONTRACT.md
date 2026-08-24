@@ -13,6 +13,25 @@
 The product-facing information architecture is connected to the implementation
 in the [system architecture and daily workflow](Docs/ARCHITECTURE.md).
 
+### Iteration 2 — morning intelligence desk
+
+- **Visual thesis:** a calm morning editorial desk with a warm reading canvas,
+  a softly layered navigation rail, one amber action color, and semantic color
+  reserved for real danger or completion.
+- **Content hierarchy:** daily conclusion → unresolved alerts → unread summaries
+  → cross-mail signals → investment theses → source evidence. Raw mail never
+  competes with the interpreted conclusion.
+- **Interaction thesis:** brief fades and settles into place when opened; rows
+  use fast hover emphasis to clarify click targets; sync uses a restrained symbol
+  animation and always exposes the real model and freshness state. Custom motion
+  is disabled when Reduce Motion is enabled.
+- **Density contract:** the daily unread list shows one concise interpretation
+  per mail. Structured investment evidence, catalysts, and risks appear in the
+  detail reader instead of expanding every list row.
+- **Navigation contract:** current alerts and their badge share the same source
+  of truth. Categories use readable rows rather than a grid of small controls,
+  and secondary source/history navigation stays collapsible.
+
 ### Visual thesis
 
 A quiet morning editorial desk: warm paper, ink-like typography, one amber signal color, and dense information shaped by whitespace rather than card chrome.
